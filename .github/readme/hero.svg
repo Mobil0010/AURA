@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-label="AURA — Your library. Your sound.">
+<defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#121a2c"/><stop offset="1" stop-color="#0e1119"/></linearGradient><linearGradient id="wave"><stop stop-color="#89b7ff"/><stop offset="1" stop-color="#b8e4d2"/></linearGradient></defs>
+<rect width="1200" height="300" rx="24" fill="url(#bg)"/>
+<rect x="52" y="56" width="34" height="4" rx="2" fill="#8bb9ff"/>
+<text x="52" y="133" fill="#f3f5fc" font-family="Arial,Helvetica,sans-serif" font-size="66" font-weight="600" letter-spacing="8">AURA</text>
+<text x="54" y="187" fill="#b6c4dc" font-family="Arial,Helvetica,sans-serif" font-size="25">Your library. Your sound.</text>
+<text x="54" y="244" fill="#8191ab" font-family="Arial,Helvetica,sans-serif" font-size="13" letter-spacing="2">LOCAL MUSIC · GOOGLE DRIVE · ANDROID</text>
+<g fill="url(#wave)"><rect x="826" y="130" width="14" height="40" rx="7"/><rect x="858" y="108" width="14" height="84" rx="7"/><rect x="890" y="78" width="14" height="144" rx="7"/><rect x="922" y="47" width="14" height="206" rx="7"/><rect x="954" y="91" width="14" height="118" rx="7"/><rect x="986" y="116" width="14" height="68" rx="7"/><rect x="1018" y="134" width="14" height="32" rx="7"/></g>
+</svg>
