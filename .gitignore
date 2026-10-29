@@ -1,0 +1,19 @@
+.gradle/
+.local/
+**/build/
+local.properties
+*.iml
+.idea/
+.DS_Store
+*.jks
+
+**/.cxx/
+
+dist/
+
+# Signing private material must never be committed. Public .pem certificates/lineage are allowed.
+*.keystore
+*.p12
+*.pfx
+*.pk8
+*.pass

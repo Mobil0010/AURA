@@ -1,0 +1,10 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="horizontal" android:gravity="center_vertical" android:padding="12dp" android:background="@drawable/widget_background">
+ <ImageView android:id="@+id/widget_art" android:layout_width="64dp" android:layout_height="64dp" android:src="@drawable/ic_aura" android:scaleType="fitCenter" android:contentDescription="앨범아트" />
+ <LinearLayout android:id="@+id/widget_open" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:orientation="vertical" android:gravity="center_vertical" android:padding="12dp">
+  <TextView android:id="@+id/widget_title" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="AURA" android:textColor="#F4F6FA" android:textSize="15sp" android:maxLines="1" android:ellipsize="end" />
+  <TextView android:id="@+id/widget_artist" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="음악을 선택해 주세요." android:textColor="#AAB5C7" android:textSize="12sp" android:maxLines="1" android:ellipsize="end" />
+ </LinearLayout>
+ <ImageButton android:id="@+id/widget_previous" android:layout_width="44dp" android:layout_height="48dp" android:padding="10dp" android:background="@android:color/transparent" android:src="@drawable/ic_widget_previous" android:contentDescription="이전 곡" />
+ <ImageButton android:id="@+id/widget_play" android:layout_width="44dp" android:layout_height="48dp" android:padding="10dp" android:background="@android:color/transparent" android:src="@drawable/ic_widget_play" android:contentDescription="재생 또는 일시정지" />
+ <ImageButton android:id="@+id/widget_next" android:layout_width="44dp" android:layout_height="48dp" android:padding="10dp" android:background="@android:color/transparent" android:src="@drawable/ic_widget_next" android:contentDescription="다음 곡" />
+</LinearLayout>

@@ -1,0 +1,25 @@
+<resources><style name="Theme.Aura" parent="Theme.AppCompat.NoActionBar">
+<item name="alertDialogTheme">@style/Theme.Aura.Dialog</item><item name="android:fontFamily">sans</item><item name="android:windowLightStatusBar">false</item>
+<item name="android:statusBarColor">#11141d</item><item name="android:navigationBarColor">#11141d</item>
+<item name="android:windowBackground">#11141d</item><item name="android:colorBackground">#1c2130</item>
+<item name="android:textColorPrimary">#f3f4fa</item><item name="android:textColorSecondary">#a2abc0</item>
+<item name="colorAccent">#80b6ff</item><item name="colorControlNormal">#a2abc0</item><item name="colorControlActivated">#80b6ff</item>
+<item name="android:colorAccent">#80b6ff</item><item name="android:windowActionModeOverlay">true</item>
+</style>
+<style name="Theme.Aura.Light" parent="Theme.AppCompat.Light.NoActionBar">
+<item name="alertDialogTheme">@style/Theme.Aura.Dialog.Light</item><item name="android:fontFamily">sans</item><item name="android:windowLightStatusBar">true</item>
+<item name="android:statusBarColor">#f7f8fc</item><item name="android:navigationBarColor">#f7f8fc</item>
+<item name="android:windowBackground">#f7f8fc</item><item name="android:colorBackground">#ffffff</item>
+<item name="android:textColorPrimary">#1a2030</item><item name="android:textColorSecondary">#606b80</item>
+<item name="colorAccent">#1764c0</item><item name="colorControlNormal">#606b80</item><item name="colorControlActivated">#1764c0</item>
+<item name="android:colorAccent">#1764c0</item><item name="android:windowActionModeOverlay">true</item>
+</style>
+<style name="Theme.Aura.Dialog" parent="Theme.AppCompat.Dialog.Alert">
+<item name="android:windowBackground">@drawable/dialog_surface</item><item name="android:colorBackground">#1c2130</item><item name="android:textColorPrimary">#f3f4fa</item><item name="android:textColorSecondary">#a2abc0</item><item name="colorAccent">#80b6ff</item><item name="colorControlNormal">#a2abc0</item><item name="colorControlActivated">#80b6ff</item><item name="android:fontFamily">sans-serif</item><item name="android:windowMinWidthMajor">88%</item><item name="android:windowMinWidthMinor">90%</item><item name="android:backgroundDimAmount">0.55</item><item name="buttonBarButtonStyle">@style/Aura.Dialog.Button</item><item name="textAppearanceListItem">@style/Aura.Dialog.Item</item><item name="android:listPreferredItemHeightSmall">56dp</item>
+</style>
+<style name="Theme.Aura.Dialog.Light" parent="Theme.AppCompat.Light.Dialog.Alert">
+<item name="android:windowBackground">@drawable/dialog_surface</item><item name="android:colorBackground">#ffffff</item><item name="android:textColorPrimary">#1a2030</item><item name="android:textColorSecondary">#606b80</item><item name="colorAccent">#1764c0</item><item name="colorControlNormal">#606b80</item><item name="colorControlActivated">#1764c0</item><item name="android:fontFamily">sans-serif</item><item name="android:windowMinWidthMajor">88%</item><item name="android:windowMinWidthMinor">90%</item><item name="android:backgroundDimAmount">0.4</item><item name="buttonBarButtonStyle">@style/Aura.Dialog.Button</item><item name="textAppearanceListItem">@style/Aura.Dialog.Item</item><item name="android:listPreferredItemHeightSmall">56dp</item>
+</style>
+<style name="Aura.Dialog.Button" parent="Widget.AppCompat.Button.ButtonBar.AlertDialog"><item name="android:textAllCaps">false</item><item name="android:textSize">14sp</item><item name="android:minHeight">48dp</item><item name="android:fontFamily">sans-serif-medium</item></style>
+<style name="Aura.Dialog.Item" parent="TextAppearance.AppCompat.Body1"><item name="android:textSize">16sp</item><item name="android:fontFamily">sans-serif</item></style>
+</resources>

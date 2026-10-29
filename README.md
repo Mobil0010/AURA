@@ -237,7 +237,12 @@ Google 로그인은 OAuth 등록과 계정 허용 상태의 영향을 받으며,
 <details>
 <summary><strong>소스 다운로드 · 빌드 · 검사 방법</strong></summary>
 
-**현재 대응 소스·개발 문서·네이티브 라이선스는 각 릴리스의 `AURA-<버전>-source.zip`으로 제공합니다.** GitHub 기본 브랜치만 복제했을 때와 릴리스 소스 ZIP의 구성은 다를 수 있습니다. APK에 대응하는 소스를 빌드하려면 해당 버전의 ZIP을 사용합니다.
+**앱 소스와 개발 문서는 이 저장소의 코드 탭에서 확인할 수 있습니다.** 저장소를 복제해 개발하거나, 설치한 APK와 정확히 대응하는 소스가 필요하면 해당 릴리스의 `AURA-<버전>-source.zip`을 사용하세요. 기본 브랜치에는 이후 수정이 포함될 수 있습니다.
+
+```sh
+git clone https://github.com/Mobil0010/AURA.git
+cd AURA
+```
 
 [0.20.0 대응 소스 다운로드](https://github.com/Mobil0010/AURA/releases/download/v0.20.0/AURA-0.20.0-source.zip)
 

@@ -1,0 +1,44 @@
+# 0.9.0 개발 현황
+
+[드래그·폴더 경로·실시간 가사 수정](RELEASE-0.9.0.md).
+
+[화면·탐색 사용성 정리](RELEASE-0.8.0.md).
+
+[목록 스크롤 및 Drive 사전 로딩](RELEASE-0.7.0.md).
+
+[Google Drive 스트리밍](RELEASE-0.6.0.md) · [Google 로그인 등록 및 데이터 처리](GOOGLE_DRIVE.md).
+
+[0.5.1 Android 9 서명 확인 수정](RELEASE-0.5.1.md).
+
+[0.5.0 USB·라이브러리·알림 설정·하단 가사 수정 내역](RELEASE-0.5.0.md).
+
+[앱 업데이트·배포 방식](UPDATES.md).
+
+[화면·애니메이션·재생 오류 개선 내역](RELEASE-0.3.0.md). 검증은 [VALIDATION.md](VALIDATION.md)를 참고한다.
+
+네이티브 앱과 실제 오디오 경로를 구현했다. 초기 HTML 시안과는 별도이며 APK에서 동작한다.
+
+## 완료한 소프트웨어 경로
+
+- SAF 음악 인덱스/메타데이터/앨범아트, 4종 라이브러리, 검색, 플레이리스트, 재생 상태 복구. 목록 행 재활용과 앨범아트 축소 디코딩으로 대용량 목록 메모리 사용을 제한한다.
+- PCM AudioSink와 Media3 서비스, 실제 AudioTrack 라우팅, 샘플레이트/비트 깊이/버퍼 선택.
+- JNI 스트리밍 libsoxr, resampler tail drain, float64→정수 양자화/디더링.
+- 실제 PCM에 적용되는 파라메트릭 EQ와 동일 계수의 그래프. 게인·필터 변경을 부드럽게 전환.
+- 크로스피드/밸런스/프리앰프/소프트 리미터, 출력 장치 모델별 프리셋 저장/복원.
+- 공식 BIT_PERFECT mixer attribute 선택 및 지원 검사. DSP 우회, 형식 미지원 시 중단.
+- UAC descriptor 검사, 권한 FD 래핑, 등시성 전송 큐/명시적 피드백을 사용하는 USB PCM 백엔드.
+- 비압축 DSF/DFF 파서, SoX DSD→PCM, DoP 포장. 변환 캐시와 설정별 캐스트 WAV 생성.
+- Cast 기본 수신기/대기열/명령, DLNA SSDP/AVTransport/상태 조회. 파일 서버는 byte range 지원.
+- LAN 토큰 리모컨, 재생/일시정지/곡 이동/탐색/상태 조회.
+- 자동/수동 LRCLIB, 캐시, LRC 줄 타이밍 및 Enhanced LRC 단어 타이밍 표시.
+
+## 미완료/제한
+
+- Native DSD는 미구현. 임의의 vendor raw-data alternate interface를 DSD라고 간주하지 않는다.
+- 실제 USB DAC 및 Cast/DLNA 수신기와의 물리 연결 검증은 남아 있다. 범용 표준 기반 코드가 모든 하드웨어의 성공을 뜻하지 않는다.
+- 제조사 전용 Hi-Res 시스템 드라이버를 앱에서 교체하지 않는다. 앱 스트림의 형식과 DAC 내부 처리/비트 동일성은 구분한다.
+- Cast DSP는 미리 WAV를 만드는 방식. 무지연 실시간 인코딩/전송이나 이미 캐스트 중인 곡의 EQ 실시간 갱신은 아니다.
+- DSD 변환은 캐시 저장 후 재생한다. DST 압축, 다채널 DSD, 4 GB 초과 WAV는 지원하지 않는다.
+- 네트워크/대용량 라이브러리 성능, 연결 끊김과 재연결, 제조사 백그라운드 제한은 추가 실기기 QA가 필요하다.
+- ReplayGain, FIR 컨볼루션, 크로스페이드는 추천 후보였으며 이번 구현 범위에는 포함하지 않았다.
+- 클라우드 계정/인터넷 원격, 완전한 재생 기기 이전은 없다. LAN 리모컨은 지원한다.
