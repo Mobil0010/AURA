@@ -1,1 +1,6 @@
-<paths xmlns:android="http://schemas.android.com/apk/res/android"><files-path name="updates" path="updates/"/></paths>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <files-path
+        name="updates"
+        path="updates/"
+    />
+</paths>

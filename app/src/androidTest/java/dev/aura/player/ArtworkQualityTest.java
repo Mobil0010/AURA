@@ -1,20 +1,284 @@
 package dev.aura.player;
 
 import static org.junit.Assert.*;
-import org.junit.*;import org.junit.runner.RunWith;import androidx.test.ext.junit.runners.AndroidJUnit4;import androidx.test.platform.app.InstrumentationRegistry;import android.content.*;import android.graphics.*;import android.graphics.drawable.BitmapDrawable;import android.net.Uri;import android.view.*;import java.io.*;import java.util.*;import java.util.concurrent.*;
+import org.junit.*;
+import org.junit.runner.RunWith;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
+import androidx.test.platform.app.InstrumentationRegistry;
+import android.content.*;
+import android.graphics.*;
+import android.graphics.drawable.BitmapDrawable;
+import android.net.Uri;
+import android.view.*;
+import java.io.*;
+import java.util.*;
+import java.util.concurrent.*;
 
 @RunWith(AndroidJUnit4.class)
 public class ArtworkQualityTest {
-    final android.app.Instrumentation inst=InstrumentationRegistry.getInstrumentation();final Context c=inst.getTargetContext();final List<File> files=new ArrayList<>();Object savedBudget;
-    @Before public void setup()throws Exception{var f=PlaybackBudget.class.getDeclaredField("cached");f.setAccessible(true);savedBudget=f.get(null);f.set(null,PlaybackBudget.choose(28,192,true,2L<<30));ArtworkView.clearCache();}
-    @After public void cleanup()throws Exception{var f=PlaybackBudget.class.getDeclaredField("cached");f.setAccessible(true);f.set(null,savedBudget);ArtworkView.clearCache();for(File file:files){file.delete();new File(file.getPath()+".hq2").delete();}}
-    byte[] picture(int w,int h)throws Exception{Bitmap bitmap=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);Canvas canvas=new Canvas(bitmap);Paint p=new Paint();p.setShader(new LinearGradient(0,0,w,h,new int[]{Color.BLUE,Color.MAGENTA,Color.WHITE},null,Shader.TileMode.CLAMP));canvas.drawRect(0,0,w,h,p);p.setShader(null);p.setColor(Color.BLACK);p.setTextSize(w/12f);canvas.drawText("AURA HIGH DETAIL",w/20f,h/2f,p);ByteArrayOutputStream bytes=new ByteArrayOutputStream();bitmap.compress(Bitmap.CompressFormat.PNG,100,bytes);bitmap.recycle();return bytes.toByteArray();}
-    Track track(){String id=UUID.randomUUID().toString();Track t=new Track("content://quality/"+id,"Quality","AURA","High resolution","",3000,"");files.add(Library.artFile(c,t.uri));return t;}
-    @Test public void storedCoverPreserves2048PixelsAndWideAspect()throws Exception{Bitmap bitmap=Library.thumbnail(picture(4096,2048));assertEquals(2048,bitmap.getWidth());assertEquals(1024,bitmap.getHeight());assertTrue(bitmap.getAllocationByteCount()<=16*1024*1024);Track t=track();try{ArtworkStore.save(c,t.uri,bitmap);}finally{bitmap.recycle();}assertTrue(ArtworkStore.current(c,t.uri));BitmapFactory.Options bounds=new BitmapFactory.Options();bounds.inJustDecodeBounds=true;BitmapFactory.decodeFile(Library.artFile(c,t.uri).toString(),bounds);assertEquals(2048,bounds.outWidth);assertEquals(1024,bounds.outHeight);}
-    @Test public void smallOriginalIsNotUpscaledAndInvalidPictureIsOptional()throws Exception{Bitmap bitmap=Library.thumbnail(picture(200,120));assertEquals(200,bitmap.getWidth());assertEquals(120,bitmap.getHeight());bitmap.recycle();assertNull(Library.thumbnail(new byte[]{1,2,3}));assertEquals(1024,ArtworkView.decodeEdge(1500,true));assertEquals(2048,ArtworkView.decodeEdge(1500,false));assertEquals(128,ArtworkView.decodeEdge(90,false));}
-    @Test public void measuredGridWidthAndLowMemoryDecodeRemainSharpAndBounded()throws Exception{Track t=track();Bitmap full=Library.thumbnail(picture(2048,2048));try{ArtworkStore.save(c,t.uri,full);}finally{full.recycle();}ArtworkView view=main(()->{ArtworkView art=new ArtworkView(c,t,120);art.measure(View.MeasureSpec.makeMeasureSpec(900,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(1200,View.MeasureSpec.AT_MOST));art.layout(0,0,900,900);return art;});await(()->main(()->view.image().getDrawable() instanceof BitmapDrawable d&&d.getBitmap().getWidth()>=900),6000);main(()->{Bitmap bitmap=((BitmapDrawable)view.image().getDrawable()).getBitmap();assertTrue(bitmap.getWidth()<=1024);assertEquals(900,view.getWidth());assertEquals(900,view.getHeight());assertEquals(Bitmap.Config.ARGB_8888,bitmap.getConfig());assertTrue(bitmap.getAllocationByteCount()<=4*1024*1024);return null;});}
-    File tagged(byte[] picture)throws Exception{byte[] original;try(var in=inst.getContext().getAssets().open("numbered.flac")){original=Io.read(in);}ByteArrayOutputStream block=new ByteArrayOutputStream();DataOutputStream data=new DataOutputStream(block);data.writeInt(3);byte[] mime="image/png".getBytes(java.nio.charset.StandardCharsets.US_ASCII);data.writeInt(mime.length);data.write(mime);data.writeInt(0);data.writeInt(2048);data.writeInt(2048);data.writeInt(24);data.writeInt(0);data.writeInt(picture.length);data.write(picture);byte[] payload=block.toByteArray();int offset=4,last;while(true){last=offset;int length=((original[offset+1]&255)<<16)|((original[offset+2]&255)<<8)|(original[offset+3]&255);offset+=4+length;if((original[last]&128)!=0)break;}original[last]&=127;File file=File.createTempFile("art-hq-",".flac",c.getCacheDir());files.add(file);try(var out=new FileOutputStream(file)){out.write(original,0,offset);out.write(0x86);out.write(payload.length>>16);out.write(payload.length>>8);out.write(payload.length);out.write(payload);out.write(original,offset,original.length-offset);}return file;}
-    @Test public void legacyLocalCoverUpgradesOnlyWhenLargeViewIsRequested()throws Exception{File file=tagged(picture(2048,2048));Track t=new Track(Uri.fromFile(file).toString(),"Quality","AURA","High resolution","",3000,"");File cached=Library.artFile(c,t.uri);files.add(cached);cached.getParentFile().mkdirs();Bitmap old=Bitmap.createBitmap(256,256,Bitmap.Config.ARGB_8888);old.eraseColor(Color.RED);try(var out=new FileOutputStream(cached)){old.compress(Bitmap.CompressFormat.JPEG,85,out);}old.recycle();ArtworkView small=main(()->new ArtworkView(c,t,52));await(()->main(()->small.image().getDrawable()!=null),5000);Thread.sleep(250);assertFalse(ArtworkStore.current(c,t.uri));ArtworkView large=main(()->{ArtworkView art=new ArtworkView(c,t,240);art.measure(View.MeasureSpec.makeMeasureSpec(900,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(900,View.MeasureSpec.EXACTLY));art.layout(0,0,900,900);return art;});await(()->ArtworkStore.current(c,t.uri),8000);await(()->main(()->large.image().getDrawable() instanceof BitmapDrawable d&&d.getBitmap().getWidth()>=900),5000);BitmapFactory.Options bounds=new BitmapFactory.Options();bounds.inJustDecodeBounds=true;BitmapFactory.decodeFile(cached.toString(),bounds);assertEquals(2048,bounds.outWidth);}
-    @Test public void offlineLegacyCoverRemainsVisibleWhenSourceIsUnavailable()throws Exception{Track t=track();File file=Library.artFile(c,t.uri);file.getParentFile().mkdirs();Bitmap old=Bitmap.createBitmap(256,256,Bitmap.Config.ARGB_8888);old.eraseColor(Color.BLUE);try(var out=new FileOutputStream(file)){old.compress(Bitmap.CompressFormat.JPEG,85,out);}old.recycle();ArtworkView view=main(()->new ArtworkView(c,t,240));await(()->main(()->view.image().getDrawable()!=null),5000);Thread.sleep(350);assertTrue(file.isFile());assertFalse(ArtworkStore.current(c,t.uri));main(()->{assertNotNull(view.image().getDrawable());return null;});}
-    <T>T main(Callable<T> action)throws Exception{FutureTask<T> task=new FutureTask<>(action);inst.runOnMainSync(task);return task.get(15,TimeUnit.SECONDS);}void await(Callable<Boolean> condition,long timeout)throws Exception{long end=android.os.SystemClock.elapsedRealtime()+timeout;while(!condition.call()&&android.os.SystemClock.elapsedRealtime()<end)Thread.sleep(30);assertTrue(condition.call());}
+    final android.app.Instrumentation inst = InstrumentationRegistry.getInstrumentation();
+    final Context c = inst.getTargetContext();
+    final List<File> files = new ArrayList<>();
+    Object savedBudget;
+
+    @Before
+    public void setup() throws Exception {
+        var f = PlaybackBudget.class.getDeclaredField("cached");
+        f.setAccessible(true);
+        savedBudget = f.get(null);
+        f.set(null, PlaybackBudget.choose(28, 192, true, 2L << 30));
+        ArtworkView.clearCache();
+    }
+
+    @After
+    public void cleanup() throws Exception {
+        var f = PlaybackBudget.class.getDeclaredField("cached");
+        f.setAccessible(true);
+        f.set(null, savedBudget);
+        ArtworkView.clearCache();
+        for (File file : files) {
+            file.delete();
+            new File(file.getPath() + ".hq2").delete();
+        }
+    }
+
+    byte[] picture(int w, int h) throws Exception {
+        Bitmap bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        Paint p = new Paint();
+        p.setShader(
+                new LinearGradient(
+                        0,
+                        0,
+                        w,
+                        h,
+                        new int[] {Color.BLUE, Color.MAGENTA, Color.WHITE},
+                        null,
+                        Shader.TileMode.CLAMP));
+        canvas.drawRect(0, 0, w, h, p);
+        p.setShader(null);
+        p.setColor(Color.BLACK);
+        p.setTextSize(w / 12f);
+        canvas.drawText("AURA HIGH DETAIL", w / 20f, h / 2f, p);
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, bytes);
+        bitmap.recycle();
+        return bytes.toByteArray();
+    }
+
+    Track track() {
+        String id = UUID.randomUUID().toString();
+        Track t =
+                new Track(
+                        "content://quality/" + id,
+                        "Quality",
+                        "AURA",
+                        "High resolution",
+                        "",
+                        3000,
+                        "");
+        files.add(Library.artFile(c, t.uri));
+        return t;
+    }
+
+    @Test
+    public void storedCoverPreserves2048PixelsAndWideAspect() throws Exception {
+        Bitmap bitmap = Library.thumbnail(picture(4096, 2048));
+        assertEquals(2048, bitmap.getWidth());
+        assertEquals(1024, bitmap.getHeight());
+        assertTrue(bitmap.getAllocationByteCount() <= 16 * 1024 * 1024);
+        Track t = track();
+        try {
+            ArtworkStore.save(c, t.uri, bitmap);
+        } finally {
+            bitmap.recycle();
+        }
+        assertTrue(ArtworkStore.current(c, t.uri));
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(Library.artFile(c, t.uri).toString(), bounds);
+        assertEquals(2048, bounds.outWidth);
+        assertEquals(1024, bounds.outHeight);
+    }
+
+    @Test
+    public void smallOriginalIsNotUpscaledAndInvalidPictureIsOptional() throws Exception {
+        Bitmap bitmap = Library.thumbnail(picture(200, 120));
+        assertEquals(200, bitmap.getWidth());
+        assertEquals(120, bitmap.getHeight());
+        bitmap.recycle();
+        assertNull(Library.thumbnail(new byte[] {1, 2, 3}));
+        assertEquals(1024, ArtworkView.decodeEdge(1500, true));
+        assertEquals(2048, ArtworkView.decodeEdge(1500, false));
+        assertEquals(128, ArtworkView.decodeEdge(90, false));
+    }
+
+    @Test
+    public void measuredGridWidthAndLowMemoryDecodeRemainSharpAndBounded() throws Exception {
+        Track t = track();
+        Bitmap full = Library.thumbnail(picture(2048, 2048));
+        try {
+            ArtworkStore.save(c, t.uri, full);
+        } finally {
+            full.recycle();
+        }
+        ArtworkView view =
+                main(
+                        () -> {
+                            ArtworkView art = new ArtworkView(c, t, 120);
+                            art.measure(
+                                    View.MeasureSpec.makeMeasureSpec(900, View.MeasureSpec.EXACTLY),
+                                    View.MeasureSpec.makeMeasureSpec(
+                                            1200, View.MeasureSpec.AT_MOST));
+                            art.layout(0, 0, 900, 900);
+                            return art;
+                        });
+        await(
+                () ->
+                        main(
+                                () ->
+                                        view.image().getDrawable() instanceof BitmapDrawable d
+                                                && d.getBitmap().getWidth() >= 900),
+                6000);
+        main(
+                () -> {
+                    Bitmap bitmap = ((BitmapDrawable) view.image().getDrawable()).getBitmap();
+                    assertTrue(bitmap.getWidth() <= 1024);
+                    assertEquals(900, view.getWidth());
+                    assertEquals(900, view.getHeight());
+                    assertEquals(Bitmap.Config.ARGB_8888, bitmap.getConfig());
+                    assertTrue(bitmap.getAllocationByteCount() <= 4 * 1024 * 1024);
+                    return null;
+                });
+    }
+
+    File tagged(byte[] picture) throws Exception {
+        byte[] original;
+        try (var in = inst.getContext().getAssets().open("numbered.flac")) {
+            original = Io.read(in);
+        }
+        ByteArrayOutputStream block = new ByteArrayOutputStream();
+        DataOutputStream data = new DataOutputStream(block);
+        data.writeInt(3);
+        byte[] mime = "image/png".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        data.writeInt(mime.length);
+        data.write(mime);
+        data.writeInt(0);
+        data.writeInt(2048);
+        data.writeInt(2048);
+        data.writeInt(24);
+        data.writeInt(0);
+        data.writeInt(picture.length);
+        data.write(picture);
+        byte[] payload = block.toByteArray();
+        int offset = 4, last;
+        while (true) {
+            last = offset;
+            int length =
+                    ((original[offset + 1] & 255) << 16)
+                            | ((original[offset + 2] & 255) << 8)
+                            | (original[offset + 3] & 255);
+            offset += 4 + length;
+            if ((original[last] & 128) != 0) break;
+        }
+        original[last] &= 127;
+        File file = File.createTempFile("art-hq-", ".flac", c.getCacheDir());
+        files.add(file);
+        try (var out = new FileOutputStream(file)) {
+            out.write(original, 0, offset);
+            out.write(0x86);
+            out.write(payload.length >> 16);
+            out.write(payload.length >> 8);
+            out.write(payload.length);
+            out.write(payload);
+            out.write(original, offset, original.length - offset);
+        }
+        return file;
+    }
+
+    @Test
+    public void legacyLocalCoverUpgradesOnlyWhenLargeViewIsRequested() throws Exception {
+        File file = tagged(picture(2048, 2048));
+        Track t =
+                new Track(
+                        Uri.fromFile(file).toString(),
+                        "Quality",
+                        "AURA",
+                        "High resolution",
+                        "",
+                        3000,
+                        "");
+        File cached = Library.artFile(c, t.uri);
+        files.add(cached);
+        cached.getParentFile().mkdirs();
+        Bitmap old = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888);
+        old.eraseColor(Color.RED);
+        try (var out = new FileOutputStream(cached)) {
+            old.compress(Bitmap.CompressFormat.JPEG, 85, out);
+        }
+        old.recycle();
+        ArtworkView small = main(() -> new ArtworkView(c, t, 52));
+        await(() -> main(() -> small.image().getDrawable() != null), 5000);
+        Thread.sleep(250);
+        assertFalse(ArtworkStore.current(c, t.uri));
+        ArtworkView large =
+                main(
+                        () -> {
+                            ArtworkView art = new ArtworkView(c, t, 240);
+                            art.measure(
+                                    View.MeasureSpec.makeMeasureSpec(900, View.MeasureSpec.EXACTLY),
+                                    View.MeasureSpec.makeMeasureSpec(
+                                            900, View.MeasureSpec.EXACTLY));
+                            art.layout(0, 0, 900, 900);
+                            return art;
+                        });
+        await(() -> ArtworkStore.current(c, t.uri), 8000);
+        await(
+                () ->
+                        main(
+                                () ->
+                                        large.image().getDrawable() instanceof BitmapDrawable d
+                                                && d.getBitmap().getWidth() >= 900),
+                5000);
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(cached.toString(), bounds);
+        assertEquals(2048, bounds.outWidth);
+    }
+
+    @Test
+    public void offlineLegacyCoverRemainsVisibleWhenSourceIsUnavailable() throws Exception {
+        Track t = track();
+        File file = Library.artFile(c, t.uri);
+        file.getParentFile().mkdirs();
+        Bitmap old = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888);
+        old.eraseColor(Color.BLUE);
+        try (var out = new FileOutputStream(file)) {
+            old.compress(Bitmap.CompressFormat.JPEG, 85, out);
+        }
+        old.recycle();
+        ArtworkView view = main(() -> new ArtworkView(c, t, 240));
+        await(() -> main(() -> view.image().getDrawable() != null), 5000);
+        Thread.sleep(350);
+        assertTrue(file.isFile());
+        assertFalse(ArtworkStore.current(c, t.uri));
+        main(
+                () -> {
+                    assertNotNull(view.image().getDrawable());
+                    return null;
+                });
+    }
+
+    <T> T main(Callable<T> action) throws Exception {
+        FutureTask<T> task = new FutureTask<>(action);
+        inst.runOnMainSync(task);
+        return task.get(15, TimeUnit.SECONDS);
+    }
+
+    void await(Callable<Boolean> condition, long timeout) throws Exception {
+        long end = android.os.SystemClock.elapsedRealtime() + timeout;
+        while (!condition.call() && android.os.SystemClock.elapsedRealtime() < end)
+            Thread.sleep(30);
+        assertTrue(condition.call());
+    }
 }

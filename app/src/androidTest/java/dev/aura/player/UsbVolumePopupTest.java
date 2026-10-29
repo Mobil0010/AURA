@@ -1,14 +1,174 @@
 package dev.aura.player;
-import static org.junit.Assert.*;import org.junit.*;import org.junit.runner.RunWith;import androidx.test.ext.junit.runners.AndroidJUnit4;import android.view.*;import android.widget.*;import android.os.*;
+
+import static org.junit.Assert.*;
+import org.junit.*;
+import org.junit.runner.RunWith;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
+import android.view.*;
+import android.widget.*;
+import android.os.*;
+
 @RunWith(AndroidJUnit4.class)
-@androidx.annotation.OptIn(markerClass=androidx.media3.common.util.UnstableApi.class)
+@androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
 public class UsbVolumePopupTest extends FeaturePackTest {
- UsbVolume.Access original;
- @Before public void popupSetup(){original=UsbVolume.access;c.getSharedPreferences("playback",0).edit().putBoolean(UsbVolumePopup.IN_APP,true).putBoolean(UsbVolumePopup.BACKGROUND,false).commit();}
- @After public void popupCleanup()throws Exception{main(()->{UsbVolumePopup.hide(false);c.getSharedPreferences("playback",0).edit().putBoolean(UsbVolumePopup.BACKGROUND,false).apply();UsbVolume.access=original;AudioSettings.put("mode","android");return null;});}
- void direct()throws Exception{main(()->{UsbVolume.init(c);UsbVolume.access=new UsbVolumeMemoryTest.Fake("popup-test",-20*256);AudioSettings.put("mode","usb");AudioSettings.put("perfect",false);UsbVolume.state=new UsbVolume.State(false,false,50,"test");return null;});}
- @Test public void inAppPopupAnchorsAboveBarResetsDeadlineAndFades()throws Exception{homeAndToolsScreensHaveNaturalCollectionsAndCapture();main(()->{activity.musicGo("home");return null;});direct();main(()->{UsbVolume.set(42);return null;});Thread.sleep(350);main(()->{assertNotNull(UsbVolumePopup.card);assertFalse(UsbVolumePopup.overlay);int[] popup=new int[2],anchor=new int[2];UsbVolumePopup.card.getLocationOnScreen(popup);activity.musicVolumeAnchor().getLocationOnScreen(anchor);assertTrue(popup[1]+UsbVolumePopup.card.getHeight()<=anchor[1]);assertTrue(UsbVolumePopup.value.getText().toString().contains("42%"));return null;});capture("usb-volume-app-popup");Thread.sleep(1800);main(()->{activity.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_VOLUME_UP));return null;});Thread.sleep(1400);assertTrue(main(()->UsbVolumePopup.card!=null));Thread.sleep(2100);assertNull(main(()->UsbVolumePopup.card));}
- @Test public void playerAndDisabledSettingSuppressPopup()throws Exception{launch();direct();main(()->{set("page","player");UsbVolume.set(30);assertNull(UsbVolumePopup.card);set("page","home");c.getSharedPreferences("playback",0).edit().putBoolean(UsbVolumePopup.IN_APP,false).commit();UsbVolume.set(30);assertNull(UsbVolumePopup.card);return null;});}
- @Test public void backgroundOverlayRequiresPermissionAndOptIn()throws Exception{launch();direct();boolean permitted=android.provider.Settings.canDrawOverlays(c);main(()->{UsbVolumePopup.pause(activity);UsbVolume.set(33);assertNull(UsbVolumePopup.card);c.getSharedPreferences("playback",0).edit().putBoolean(UsbVolumePopup.BACKGROUND,true).commit();UsbVolume.set(34);if(permitted){assertNotNull(UsbVolumePopup.card);assertTrue(UsbVolumePopup.overlay);}else assertNull(UsbVolumePopup.card);return null;});if(permitted){main(()->{activity.moveTaskToBack(true);return null;});Thread.sleep(1200);main(()->{UsbVolume.set(36);return null;});Thread.sleep(300);capture("usb-volume-background-popup");Thread.sleep(3300);assertNull(main(()->UsbVolumePopup.card));}}
- @Test public void audioSettingsExplainPermissionBeforeOpeningSettings()throws Exception{launch();main(()->{activity.musicGo("audio");return null;});Thread.sleep(800);capture("usb-volume-popup-settings");if(!android.provider.Settings.canDrawOverlays(c)){main(()->{UsbVolumePopup.backgroundSetting(activity,true,()->{});return null;});Thread.sleep(300);capture("usb-volume-popup-permission");assertFalse(UsbVolumePopup.enabled(c,UsbVolumePopup.BACKGROUND));}}
+    UsbVolume.Access original;
+
+    @Before
+    public void popupSetup() {
+        original = UsbVolume.access;
+        c.getSharedPreferences("playback", 0)
+                .edit()
+                .putBoolean(UsbVolumePopup.IN_APP, true)
+                .putBoolean(UsbVolumePopup.BACKGROUND, false)
+                .commit();
+    }
+
+    @After
+    public void popupCleanup() throws Exception {
+        main(
+                () -> {
+                    UsbVolumePopup.hide(false);
+                    c.getSharedPreferences("playback", 0)
+                            .edit()
+                            .putBoolean(UsbVolumePopup.BACKGROUND, false)
+                            .apply();
+                    UsbVolume.access = original;
+                    AudioSettings.put("mode", "android");
+                    return null;
+                });
+    }
+
+    void direct() throws Exception {
+        main(
+                () -> {
+                    UsbVolume.init(c);
+                    UsbVolume.access = new UsbVolumeMemoryTest.Fake("popup-test", -20 * 256);
+                    AudioSettings.put("mode", "usb");
+                    AudioSettings.put("perfect", false);
+                    UsbVolume.state = new UsbVolume.State(false, false, 50, "test");
+                    return null;
+                });
+    }
+
+    @Test
+    public void inAppPopupAnchorsAboveBarResetsDeadlineAndFades() throws Exception {
+        homeAndToolsScreensHaveNaturalCollectionsAndCapture();
+        main(
+                () -> {
+                    activity.musicGo("home");
+                    return null;
+                });
+        direct();
+        main(
+                () -> {
+                    UsbVolume.set(42);
+                    return null;
+                });
+        Thread.sleep(350);
+        main(
+                () -> {
+                    assertNotNull(UsbVolumePopup.card);
+                    assertFalse(UsbVolumePopup.overlay);
+                    int[] popup = new int[2], anchor = new int[2];
+                    UsbVolumePopup.card.getLocationOnScreen(popup);
+                    activity.musicVolumeAnchor().getLocationOnScreen(anchor);
+                    assertTrue(popup[1] + UsbVolumePopup.card.getHeight() <= anchor[1]);
+                    assertTrue(UsbVolumePopup.value.getText().toString().contains("42%"));
+                    return null;
+                });
+        capture("usb-volume-app-popup");
+        Thread.sleep(1800);
+        main(
+                () -> {
+                    activity.dispatchKeyEvent(
+                            new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_VOLUME_UP));
+                    return null;
+                });
+        Thread.sleep(1400);
+        assertTrue(main(() -> UsbVolumePopup.card != null));
+        Thread.sleep(2100);
+        assertNull(main(() -> UsbVolumePopup.card));
+    }
+
+    @Test
+    public void playerAndDisabledSettingSuppressPopup() throws Exception {
+        launch();
+        direct();
+        main(
+                () -> {
+                    set("page", "player");
+                    UsbVolume.set(30);
+                    assertNull(UsbVolumePopup.card);
+                    set("page", "home");
+                    c.getSharedPreferences("playback", 0)
+                            .edit()
+                            .putBoolean(UsbVolumePopup.IN_APP, false)
+                            .commit();
+                    UsbVolume.set(30);
+                    assertNull(UsbVolumePopup.card);
+                    return null;
+                });
+    }
+
+    @Test
+    public void backgroundOverlayRequiresPermissionAndOptIn() throws Exception {
+        launch();
+        direct();
+        boolean permitted = android.provider.Settings.canDrawOverlays(c);
+        main(
+                () -> {
+                    UsbVolumePopup.pause(activity);
+                    UsbVolume.set(33);
+                    assertNull(UsbVolumePopup.card);
+                    c.getSharedPreferences("playback", 0)
+                            .edit()
+                            .putBoolean(UsbVolumePopup.BACKGROUND, true)
+                            .commit();
+                    UsbVolume.set(34);
+                    if (permitted) {
+                        assertNotNull(UsbVolumePopup.card);
+                        assertTrue(UsbVolumePopup.overlay);
+                    } else assertNull(UsbVolumePopup.card);
+                    return null;
+                });
+        if (permitted) {
+            main(
+                    () -> {
+                        activity.moveTaskToBack(true);
+                        return null;
+                    });
+            Thread.sleep(1200);
+            main(
+                    () -> {
+                        UsbVolume.set(36);
+                        return null;
+                    });
+            Thread.sleep(300);
+            capture("usb-volume-background-popup");
+            Thread.sleep(3300);
+            assertNull(main(() -> UsbVolumePopup.card));
+        }
+    }
+
+    @Test
+    public void audioSettingsExplainPermissionBeforeOpeningSettings() throws Exception {
+        launch();
+        main(
+                () -> {
+                    activity.musicGo("audio");
+                    return null;
+                });
+        Thread.sleep(800);
+        capture("usb-volume-popup-settings");
+        if (!android.provider.Settings.canDrawOverlays(c)) {
+            main(
+                    () -> {
+                        UsbVolumePopup.backgroundSetting(activity, true, () -> {});
+                        return null;
+                    });
+            Thread.sleep(300);
+            capture("usb-volume-popup-permission");
+            assertFalse(UsbVolumePopup.enabled(c, UsbVolumePopup.BACKGROUND));
+        }
+    }
 }

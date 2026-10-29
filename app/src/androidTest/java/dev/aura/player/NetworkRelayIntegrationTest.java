@@ -1,13 +1,227 @@
 package dev.aura.player;
-import static org.junit.Assert.*;import org.junit.*;import org.junit.runner.RunWith;import androidx.test.ext.junit.runners.AndroidJUnit4;import androidx.test.platform.app.InstrumentationRegistry;import android.content.*;import android.net.Uri;import java.io.*;import java.net.*;import java.nio.charset.StandardCharsets;import java.util.*;import java.util.concurrent.*;
+
+import static org.junit.Assert.*;
+import org.junit.*;
+import org.junit.runner.RunWith;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
+import androidx.test.platform.app.InstrumentationRegistry;
+import android.content.*;
+import android.net.Uri;
+import java.io.*;
+import java.net.*;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
+import java.util.concurrent.*;
+
 @RunWith(AndroidJUnit4.class)
-@androidx.annotation.OptIn(markerClass=androidx.media3.common.util.UnstableApi.class)
+@androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
 public class NetworkRelayIntegrationTest {
- final android.app.Instrumentation inst=InstrumentationRegistry.getInstrumentation();final android.content.Context c=inst.getTargetContext();MainActivity activity;NetworkPlayback network;
- @Before public void setup()throws Exception{c.getSharedPreferences("aura",0).edit().putBoolean("scanOnLaunch",false).commit();AudioSettings.init(c);for(String key:List.of("eq","sox","perfect","limiter"))AudioSettings.put(key,false);for(String key:List.of("preamp","crossfeed","balance","bits","rate"))AudioSettings.put(key,0);AudioSettings.put("mode","android");activity=(MainActivity)inst.startActivitySync(new Intent(c,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));network=main(()->new NetworkPlayback(c));}
- @After public void cleanup()throws Exception{main(()->{if(network!=null)network.close();activity.finish();return null;});}
- @Test public void mixedCastQueueUsesDistinctProxyIdsAndCorrectMimeWithoutDownloading()throws Exception{List<Track> tracks=new ArrayList<>();for(int i=0;i<80;i++)tracks.add(new Track(DriveUris.file("test","song"+i,i%2==0?"Song.mp3":"Song.flac").toString(),"Same title","Artist","Album","",3000,"","","root",i%2==0?"audio/mpeg":"audio/flac"));Track current=tracks.get(35);network.queue(tracks,current);network.prepare(current);var items=main(()->network.castItems(current));assertTrue(items.length<=20);Set<String> urls=new HashSet<>();for(var item:items){var info=item.getMedia();assertTrue(info.getContentId().startsWith("http://"));assertFalse(info.getContentId().contains("aura-drive"));assertTrue(urls.add(info.getContentId()));assertTrue(List.of("audio/mpeg","audio/flac").contains(info.getContentType()));assertEquals("Same title",info.getMetadata().getString(com.google.android.gms.cast.MediaMetadata.KEY_TITLE));}}
- @Test public void dlnaRelayStaysAvailableInBackgroundAndStopsWithItsNotification()throws Exception{File tone=new File(c.getCacheDir(),"relay-integration.wav");try(var in=inst.getContext().getAssets().open("tone.wav");var out=new FileOutputStream(tone)){out.write(Io.read(in));}Track track=new Track(Uri.fromFile(tone).toString(),"Relay integration","AURA","Album","",3000,"");try(Renderer renderer=new Renderer()){network.queue(List.of(track),track);network.prepare(track);network.dlna(new Dlna.Device("Test renderer",renderer.url(),"urn:schemas-upnp-org:service:AVTransport:1"),track);await(()->Arrays.stream(c.getSystemService(android.app.NotificationManager.class).getActiveNotifications()).anyMatch(n->n.getId()==206),5000);assertNotNull(renderer.media);main(()->{activity.moveTaskToBack(true);return null;});var receiver=(HttpURLConnection)new URL(renderer.media).openConnection();receiver.setRequestProperty("Range","bytes=0-3");assertEquals(206,receiver.getResponseCode());assertEquals("RIFF",new String(Io.read(receiver.getInputStream()),StandardCharsets.US_ASCII));receiver.disconnect();assertTrue(network.relaying());c.startService(new Intent(c,CastRelayService.class).setAction("disconnect"));await(()->network.closed(),5000);await(()->renderer.stopped,5000);await(()->Arrays.stream(c.getSystemService(android.app.NotificationManager.class).getActiveNotifications()).noneMatch(n->n.getId()==206),5000);}}
- static class Renderer implements AutoCloseable {final ServerSocket socket=new ServerSocket(0,20,InetAddress.getByName("127.0.0.1"));final ExecutorService workers=Executors.newCachedThreadPool();volatile String media;volatile boolean stopped;Renderer()throws Exception{workers.execute(()->{while(!socket.isClosed())try{Socket s=socket.accept();workers.execute(()->serve(s));}catch(IOException ignored){}});}String url(){return "http://127.0.0.1:"+socket.getLocalPort()+"/control";}void serve(Socket s){try(s){BufferedReader in=new BufferedReader(new InputStreamReader(s.getInputStream(),StandardCharsets.UTF_8));in.readLine();String line;int length=0;while((line=in.readLine())!=null&&!line.isEmpty())if(line.toLowerCase(Locale.ROOT).startsWith("content-length:"))length=Integer.parseInt(line.substring(15).trim());char[] chars=new char[length];int read=0;while(read<length){int n=in.read(chars,read,length-read);if(n<0)break;read+=n;}String body=new String(chars,0,read);if(body.contains(":Stop"))stopped=true;if(body.contains("<CurrentURI>"))media=Dlna.tag(Dlna.xml(body).getDocumentElement(),"CurrentURI");String response="<root><CurrentTransportState>PLAYING</CurrentTransportState><RelTime>00:00:01</RelTime></root>";byte[] bytes=response.getBytes(StandardCharsets.UTF_8);s.getOutputStream().write(("HTTP/1.1 200 OK\r\nContent-Type: text/xml\r\nContent-Length: "+bytes.length+"\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.US_ASCII));s.getOutputStream().write(bytes);}catch(Exception ignored){}}public void close()throws IOException{socket.close();workers.shutdownNow();}}
- <T>T main(Callable<T> action)throws Exception{FutureTask<T> task=new FutureTask<>(action);inst.runOnMainSync(task);return task.get(20,TimeUnit.SECONDS);}void await(Callable<Boolean> condition,long timeout)throws Exception{long end=android.os.SystemClock.elapsedRealtime()+timeout;while(!condition.call()&&android.os.SystemClock.elapsedRealtime()<end)Thread.sleep(50);assertTrue(condition.call());}
+    final android.app.Instrumentation inst = InstrumentationRegistry.getInstrumentation();
+    final android.content.Context c = inst.getTargetContext();
+    MainActivity activity;
+    NetworkPlayback network;
+
+    @Before
+    public void setup() throws Exception {
+        c.getSharedPreferences("aura", 0).edit().putBoolean("scanOnLaunch", false).commit();
+        AudioSettings.init(c);
+        for (String key : List.of("eq", "sox", "perfect", "limiter")) AudioSettings.put(key, false);
+        for (String key : List.of("preamp", "crossfeed", "balance", "bits", "rate"))
+            AudioSettings.put(key, 0);
+        AudioSettings.put("mode", "android");
+        activity =
+                (MainActivity)
+                        inst.startActivitySync(
+                                new Intent(c, MainActivity.class)
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        network = main(() -> new NetworkPlayback(c));
+    }
+
+    @After
+    public void cleanup() throws Exception {
+        main(
+                () -> {
+                    if (network != null) network.close();
+                    activity.finish();
+                    return null;
+                });
+    }
+
+    @Test
+    public void mixedCastQueueUsesDistinctProxyIdsAndCorrectMimeWithoutDownloading()
+            throws Exception {
+        List<Track> tracks = new ArrayList<>();
+        for (int i = 0; i < 80; i++)
+            tracks.add(
+                    new Track(
+                            DriveUris.file(
+                                            "test",
+                                            "song" + i,
+                                            i % 2 == 0 ? "Song.mp3" : "Song.flac")
+                                    .toString(),
+                            "Same title",
+                            "Artist",
+                            "Album",
+                            "",
+                            3000,
+                            "",
+                            "",
+                            "root",
+                            i % 2 == 0 ? "audio/mpeg" : "audio/flac"));
+        Track current = tracks.get(35);
+        network.queue(tracks, current);
+        network.prepare(current);
+        var items = main(() -> network.castItems(current));
+        assertTrue(items.length <= 20);
+        Set<String> urls = new HashSet<>();
+        for (var item : items) {
+            var info = item.getMedia();
+            assertTrue(info.getContentId().startsWith("http://"));
+            assertFalse(info.getContentId().contains("aura-drive"));
+            assertTrue(urls.add(info.getContentId()));
+            assertTrue(List.of("audio/mpeg", "audio/flac").contains(info.getContentType()));
+            assertEquals(
+                    "Same title",
+                    info.getMetadata()
+                            .getString(com.google.android.gms.cast.MediaMetadata.KEY_TITLE));
+        }
+    }
+
+    @Test
+    public void dlnaRelayStaysAvailableInBackgroundAndStopsWithItsNotification() throws Exception {
+        File tone = new File(c.getCacheDir(), "relay-integration.wav");
+        try (var in = inst.getContext().getAssets().open("tone.wav");
+                var out = new FileOutputStream(tone)) {
+            out.write(Io.read(in));
+        }
+        Track track =
+                new Track(
+                        Uri.fromFile(tone).toString(),
+                        "Relay integration",
+                        "AURA",
+                        "Album",
+                        "",
+                        3000,
+                        "");
+        try (Renderer renderer = new Renderer()) {
+            network.queue(List.of(track), track);
+            network.prepare(track);
+            network.dlna(
+                    new Dlna.Device(
+                            "Test renderer",
+                            renderer.url(),
+                            "urn:schemas-upnp-org:service:AVTransport:1"),
+                    track);
+            await(
+                    () ->
+                            Arrays.stream(
+                                            c.getSystemService(
+                                                            android.app.NotificationManager.class)
+                                                    .getActiveNotifications())
+                                    .anyMatch(n -> n.getId() == 206),
+                    5000);
+            assertNotNull(renderer.media);
+            main(
+                    () -> {
+                        activity.moveTaskToBack(true);
+                        return null;
+                    });
+            var receiver = (HttpURLConnection) new URL(renderer.media).openConnection();
+            receiver.setRequestProperty("Range", "bytes=0-3");
+            assertEquals(206, receiver.getResponseCode());
+            assertEquals(
+                    "RIFF",
+                    new String(Io.read(receiver.getInputStream()), StandardCharsets.US_ASCII));
+            receiver.disconnect();
+            assertTrue(network.relaying());
+            c.startService(new Intent(c, CastRelayService.class).setAction("disconnect"));
+            await(() -> network.closed(), 5000);
+            await(() -> renderer.stopped, 5000);
+            await(
+                    () ->
+                            Arrays.stream(
+                                            c.getSystemService(
+                                                            android.app.NotificationManager.class)
+                                                    .getActiveNotifications())
+                                    .noneMatch(n -> n.getId() == 206),
+                    5000);
+        }
+    }
+
+    static class Renderer implements AutoCloseable {
+        final ServerSocket socket = new ServerSocket(0, 20, InetAddress.getByName("127.0.0.1"));
+        final ExecutorService workers = Executors.newCachedThreadPool();
+        volatile String media;
+        volatile boolean stopped;
+
+        Renderer() throws Exception {
+            workers.execute(
+                    () -> {
+                        while (!socket.isClosed())
+                            try {
+                                Socket s = socket.accept();
+                                workers.execute(() -> serve(s));
+                            } catch (IOException ignored) {
+                            }
+                    });
+        }
+
+        String url() {
+            return "http://127.0.0.1:" + socket.getLocalPort() + "/control";
+        }
+
+        void serve(Socket s) {
+            try (s) {
+                BufferedReader in =
+                        new BufferedReader(
+                                new InputStreamReader(s.getInputStream(), StandardCharsets.UTF_8));
+                in.readLine();
+                String line;
+                int length = 0;
+                while ((line = in.readLine()) != null && !line.isEmpty())
+                    if (line.toLowerCase(Locale.ROOT).startsWith("content-length:"))
+                        length = Integer.parseInt(line.substring(15).trim());
+                char[] chars = new char[length];
+                int read = 0;
+                while (read < length) {
+                    int n = in.read(chars, read, length - read);
+                    if (n < 0) break;
+                    read += n;
+                }
+                String body = new String(chars, 0, read);
+                if (body.contains(":Stop")) stopped = true;
+                if (body.contains("<CurrentURI>"))
+                    media = Dlna.tag(Dlna.xml(body).getDocumentElement(), "CurrentURI");
+                String response =
+                        "<root><CurrentTransportState>PLAYING</CurrentTransportState><RelTime>00:00:01</RelTime></root>";
+                byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
+                s.getOutputStream()
+                        .write(
+                                ("HTTP/1.1 200 OK\r\nContent-Type: text/xml\r\nContent-Length: "
+                                                + bytes.length
+                                                + "\r\nConnection: close\r\n\r\n")
+                                        .getBytes(StandardCharsets.US_ASCII));
+                s.getOutputStream().write(bytes);
+            } catch (Exception ignored) {
+            }
+        }
+
+        public void close() throws IOException {
+            socket.close();
+            workers.shutdownNow();
+        }
+    }
+
+    <T> T main(Callable<T> action) throws Exception {
+        FutureTask<T> task = new FutureTask<>(action);
+        inst.runOnMainSync(task);
+        return task.get(20, TimeUnit.SECONDS);
+    }
+
+    void await(Callable<Boolean> condition, long timeout) throws Exception {
+        long end = android.os.SystemClock.elapsedRealtime() + timeout;
+        while (!condition.call() && android.os.SystemClock.elapsedRealtime() < end)
+            Thread.sleep(50);
+        assertTrue(condition.call());
+    }
 }

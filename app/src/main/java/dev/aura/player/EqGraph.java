@@ -1,20 +1,241 @@
 package dev.aura.player;
+
 import android.content.Context;
 import android.graphics.*;
 import android.view.*;
 
-@androidx.annotation.OptIn(markerClass=androidx.media3.common.util.UnstableApi.class)
+@androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
 public final class EqGraph extends View {
-    private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);private final Path path=new Path(),fill=new Path();private int selected;private java.util.function.IntConsumer onSelect;
-    private final int mint=Ui.MINT,muted=Ui.MUTED;private float left,right,top,bottom;private boolean editing;private AudioSettings.Config plotted;private int plottedRate;private double[] combined=new double[251];private double[][] curves;private Shader shade;private int shadeHeight;
-    public EqGraph(Context c){super(c);setContentDescription("EQ 응답 그래프. 밴드 지점을 드래그하거나 아래 슬라이더로 조절할 수 있습니다.");}
-    public void selection(int value){selected=Math.max(0,value);invalidate();}public void onSelect(java.util.function.IntConsumer fn){onSelect=fn;}
-    private float x(double f){return left+(float)(Math.log(Math.max(20,Math.min(20000,f))/20)/Math.log(1000))*(right-left);}private float y(double db){return top+(float)((12-db)/24)*(bottom-top);}
-    private void response(AudioSettings.Config c,int rate){if(c==plotted&&rate==plottedRate)return;plotted=c;plottedRate=rate;curves=new double[c.bands().size()][251];double[][] coefficients=new double[c.bands().size()][];for(int i=0;i<coefficients.length;i++)coefficients[i]=Biquad.coefficients(c.bands().get(i),rate);boolean enabled=c.eq()&&!c.perfect();double applied=enabled?EqHeadroom.appliedPreamp(c,rate):0;for(int point=0;point<=250;point++){double frequency=20*Math.pow(1000,point/250.);combined[point]=applied;for(int band=0;band<coefficients.length;band++){curves[band][point]=enabled?Biquad.response(coefficients[band],frequency,rate):0;combined[point]+=curves[band][point];}}}
-    @Override protected void onDraw(Canvas canvas){super.onDraw(canvas);float d=getResources().getDisplayMetrics().density;left=30*d;right=getWidth()-10*d;top=22*d;bottom=getHeight()-28*d;paint.setStyle(Paint.Style.FILL);paint.setPathEffect(null);paint.setTextSize(9*d);paint.setTypeface(Typeface.create("sans-serif",Typeface.NORMAL));paint.setStrokeWidth(d);for(int db=-12;db<=12;db+=6){paint.setColor(Ui.BORDER);paint.setAlpha(db==0?220:120);canvas.drawLine(left,y(db),right,y(db),paint);paint.setAlpha(255);paint.setColor(muted);canvas.drawText((db>0?"+":"")+db,0,y(db)+3*d,paint);}for(int f:new int[]{20,100,1000,10000,20000}){paint.setColor(Ui.BORDER);paint.setAlpha(100);canvas.drawLine(x(f),top,x(f),bottom,paint);paint.setAlpha(255);paint.setColor(muted);String label=f>=1000?f/1000+"k":""+f;canvas.drawText(label,Math.max(left,Math.min(right-paint.measureText(label),x(f)-paint.measureText(label)/2)),bottom+19*d,paint);}paint.setColor(muted);canvas.drawText("dB",0,10*d,paint);
-        AudioSettings.Config c=AudioSettings.current;if(c==null||c.bands().isEmpty())return;selected=Math.min(selected,c.bands().size()-1);response(c,PcmSink.outputRate);int save=canvas.save();canvas.clipRect(left,top,right,bottom);for(int variant=0;variant<2;variant++){path.reset();for(int point=0;point<=250;point++){double db=variant==0?combined[point]:curves[selected][point];float px=left+(right-left)*point/250,py=y(Math.max(-12,Math.min(12,db)));if(point==0)path.moveTo(px,py);else path.lineTo(px,py);}if(variant==0){if(shade==null||shadeHeight!=getHeight()){shadeHeight=getHeight();shade=new LinearGradient(0,top,0,bottom,new int[]{(mint&0xffffff)|0x30000000,(mint&0xffffff)|0x02000000},null,Shader.TileMode.CLAMP);}fill.set(path);fill.lineTo(right,bottom);fill.lineTo(left,bottom);fill.close();paint.setStyle(Paint.Style.FILL);paint.setShader(shade);canvas.drawPath(fill,paint);paint.setShader(null);}paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth((variant==0?2.3f:1)*d);paint.setColor(variant==0?mint:muted);paint.setPathEffect(variant==0?null:new DashPathEffect(new float[]{3*d,4*d},0));canvas.drawPath(path,paint);paint.setPathEffect(null);}canvas.restoreToCount(save);paint.setStyle(Paint.Style.FILL);
-        for(int i=0;i<c.bands().size();i++){var band=c.bands().get(i);float px=x(band.frequency()),py=y(c.perfect()||!c.eq()?0:band.gain());if(i==selected){paint.setColor((mint&0xffffff)|0x28000000);canvas.drawCircle(px,py,10*d,paint);}paint.setColor(i==selected?mint:muted);canvas.drawCircle(px,py,(i==selected?6:3.5f)*d,paint);if(i==selected){paint.setColor(Ui.onAccent());paint.setTextSize(7*d);String number=""+(i+1);canvas.drawText(number,px-paint.measureText(number)/2,py+2.5f*d,paint);}}
+    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Path path = new Path(), fill = new Path();
+    private int selected;
+    private java.util.function.IntConsumer onSelect;
+    private final int mint = Ui.MINT, muted = Ui.MUTED;
+    private float left, right, top, bottom;
+    private boolean editing;
+    private AudioSettings.Config plotted;
+    private int plottedRate;
+    private double[] combined = new double[251];
+    private double[][] curves;
+    private Shader shade;
+    private int shadeHeight;
+
+    public EqGraph(Context c) {
+        super(c);
+        setContentDescription("EQ 응답 그래프. 밴드 지점을 드래그하거나 아래 슬라이더로 조절할 수 있습니다.");
     }
-    @Override public boolean performClick(){super.performClick();return true;}
-    @Override public boolean onTouchEvent(MotionEvent event){var c=AudioSettings.current;if(c==null||c.perfect()||right<=left||bottom<=top)return false;if(event.getActionMasked()==MotionEvent.ACTION_DOWN){double distance=Double.MAX_VALUE;int nearest=0;for(int i=0;i<c.bands().size();i++){var band=c.bands().get(i);double current=Math.hypot(event.getX()-x(band.frequency()),event.getY()-y(c.eq()?band.gain():0));if(current<distance){distance=current;nearest=i;}}if(distance>Ui.dp(getContext(),24))return false;selected=nearest;editing=true;getParent().requestDisallowInterceptTouchEvent(true);if(onSelect!=null)onSelect.accept(selected);invalidate();return true;}if(!editing)return false;if(event.getActionMasked()==MotionEvent.ACTION_MOVE){var band=c.bands().get(selected);double frequency=Math.max(20,Math.min(20000,20*Math.pow(1000,(event.getX()-left)/(right-left)))),gain=Math.max(-12,Math.min(12,12-24*(event.getY()-top)/(bottom-top)));AudioSettings.band(selected,new AudioSettings.Band(frequency,gain,band.q(),band.type()));if(onSelect!=null)onSelect.accept(selected);invalidate();return true;}if(event.getActionMasked()==MotionEvent.ACTION_UP||event.getActionMasked()==MotionEvent.ACTION_CANCEL){editing=false;getParent().requestDisallowInterceptTouchEvent(false);if(event.getActionMasked()==MotionEvent.ACTION_UP)performClick();return true;}return true;}
+
+    public void selection(int value) {
+        selected = Math.max(0, value);
+        invalidate();
+    }
+
+    public void onSelect(java.util.function.IntConsumer fn) {
+        onSelect = fn;
+    }
+
+    private float x(double f) {
+        return left
+                + (float) (Math.log(Math.max(20, Math.min(20000, f)) / 20) / Math.log(1000))
+                        * (right - left);
+    }
+
+    private float y(double db) {
+        return top + (float) ((12 - db) / 24) * (bottom - top);
+    }
+
+    private void response(AudioSettings.Config c, int rate) {
+        if (c == plotted && rate == plottedRate) return;
+        plotted = c;
+        plottedRate = rate;
+        curves = new double[c.bands().size()][251];
+        double[][] coefficients = new double[c.bands().size()][];
+        for (int i = 0; i < coefficients.length; i++)
+            coefficients[i] = Biquad.coefficients(c.bands().get(i), rate);
+        boolean enabled = c.eq() && !c.perfect();
+        double applied = enabled ? EqHeadroom.appliedPreamp(c, rate) : 0;
+        for (int point = 0; point <= 250; point++) {
+            double frequency = 20 * Math.pow(1000, point / 250.);
+            combined[point] = applied;
+            for (int band = 0; band < coefficients.length; band++) {
+                curves[band][point] =
+                        enabled ? Biquad.response(coefficients[band], frequency, rate) : 0;
+                combined[point] += curves[band][point];
+            }
+        }
+    }
+
+    @Override
+    protected void onDraw(Canvas canvas) {
+        super.onDraw(canvas);
+        float d = getResources().getDisplayMetrics().density;
+        left = 30 * d;
+        right = getWidth() - 10 * d;
+        top = 22 * d;
+        bottom = getHeight() - 28 * d;
+        paint.setStyle(Paint.Style.FILL);
+        paint.setPathEffect(null);
+        paint.setTextSize(9 * d);
+        paint.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
+        paint.setStrokeWidth(d);
+        for (int db = -12; db <= 12; db += 6) {
+            paint.setColor(Ui.BORDER);
+            paint.setAlpha(db == 0 ? 220 : 120);
+            canvas.drawLine(left, y(db), right, y(db), paint);
+            paint.setAlpha(255);
+            paint.setColor(muted);
+            canvas.drawText((db > 0 ? "+" : "") + db, 0, y(db) + 3 * d, paint);
+        }
+        for (int f : new int[] {20, 100, 1000, 10000, 20000}) {
+            paint.setColor(Ui.BORDER);
+            paint.setAlpha(100);
+            canvas.drawLine(x(f), top, x(f), bottom, paint);
+            paint.setAlpha(255);
+            paint.setColor(muted);
+            String label = f >= 1000 ? f / 1000 + "k" : "" + f;
+            canvas.drawText(
+                    label,
+                    Math.max(
+                            left,
+                            Math.min(
+                                    right - paint.measureText(label),
+                                    x(f) - paint.measureText(label) / 2)),
+                    bottom + 19 * d,
+                    paint);
+        }
+        paint.setColor(muted);
+        canvas.drawText("dB", 0, 10 * d, paint);
+        AudioSettings.Config c = AudioSettings.current;
+        if (c == null || c.bands().isEmpty()) return;
+        selected = Math.min(selected, c.bands().size() - 1);
+        response(c, PcmSink.outputRate);
+        int save = canvas.save();
+        canvas.clipRect(left, top, right, bottom);
+        for (int variant = 0; variant < 2; variant++) {
+            path.reset();
+            for (int point = 0; point <= 250; point++) {
+                double db = variant == 0 ? combined[point] : curves[selected][point];
+                float px = left + (right - left) * point / 250,
+                        py = y(Math.max(-12, Math.min(12, db)));
+                if (point == 0) path.moveTo(px, py);
+                else path.lineTo(px, py);
+            }
+            if (variant == 0) {
+                if (shade == null || shadeHeight != getHeight()) {
+                    shadeHeight = getHeight();
+                    shade =
+                            new LinearGradient(
+                                    0,
+                                    top,
+                                    0,
+                                    bottom,
+                                    new int[] {
+                                        (mint & 0xffffff) | 0x30000000,
+                                        (mint & 0xffffff) | 0x02000000
+                                    },
+                                    null,
+                                    Shader.TileMode.CLAMP);
+                }
+                fill.set(path);
+                fill.lineTo(right, bottom);
+                fill.lineTo(left, bottom);
+                fill.close();
+                paint.setStyle(Paint.Style.FILL);
+                paint.setShader(shade);
+                canvas.drawPath(fill, paint);
+                paint.setShader(null);
+            }
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth((variant == 0 ? 2.3f : 1) * d);
+            paint.setColor(variant == 0 ? mint : muted);
+            paint.setPathEffect(
+                    variant == 0 ? null : new DashPathEffect(new float[] {3 * d, 4 * d}, 0));
+            canvas.drawPath(path, paint);
+            paint.setPathEffect(null);
+        }
+        canvas.restoreToCount(save);
+        paint.setStyle(Paint.Style.FILL);
+        for (int i = 0; i < c.bands().size(); i++) {
+            var band = c.bands().get(i);
+            float px = x(band.frequency()), py = y(c.perfect() || !c.eq() ? 0 : band.gain());
+            if (i == selected) {
+                paint.setColor((mint & 0xffffff) | 0x28000000);
+                canvas.drawCircle(px, py, 10 * d, paint);
+            }
+            paint.setColor(i == selected ? mint : muted);
+            canvas.drawCircle(px, py, (i == selected ? 6 : 3.5f) * d, paint);
+            if (i == selected) {
+                paint.setColor(Ui.onAccent());
+                paint.setTextSize(7 * d);
+                String number = "" + (i + 1);
+                canvas.drawText(number, px - paint.measureText(number) / 2, py + 2.5f * d, paint);
+            }
+        }
+    }
+
+    @Override
+    public boolean performClick() {
+        super.performClick();
+        return true;
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        var c = AudioSettings.current;
+        if (c == null || c.perfect() || right <= left || bottom <= top) return false;
+        if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+            double distance = Double.MAX_VALUE;
+            int nearest = 0;
+            for (int i = 0; i < c.bands().size(); i++) {
+                var band = c.bands().get(i);
+                double current =
+                        Math.hypot(
+                                event.getX() - x(band.frequency()),
+                                event.getY() - y(c.eq() ? band.gain() : 0));
+                if (current < distance) {
+                    distance = current;
+                    nearest = i;
+                }
+            }
+            if (distance > Ui.dp(getContext(), 24)) return false;
+            selected = nearest;
+            editing = true;
+            getParent().requestDisallowInterceptTouchEvent(true);
+            if (onSelect != null) onSelect.accept(selected);
+            invalidate();
+            return true;
+        }
+        if (!editing) return false;
+        if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
+            var band = c.bands().get(selected);
+            double
+                    frequency =
+                            Math.max(
+                                    20,
+                                    Math.min(
+                                            20000,
+                                            20
+                                                    * Math.pow(
+                                                            1000,
+                                                            (event.getX() - left)
+                                                                    / (right - left)))),
+                    gain =
+                            Math.max(
+                                    -12,
+                                    Math.min(12, 12 - 24 * (event.getY() - top) / (bottom - top)));
+            AudioSettings.band(
+                    selected, new AudioSettings.Band(frequency, gain, band.q(), band.type()));
+            if (onSelect != null) onSelect.accept(selected);
+            invalidate();
+            return true;
+        }
+        if (event.getActionMasked() == MotionEvent.ACTION_UP
+                || event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
+            editing = false;
+            getParent().requestDisallowInterceptTouchEvent(false);
+            if (event.getActionMasked() == MotionEvent.ACTION_UP) performClick();
+            return true;
+        }
+        return true;
+    }
 }

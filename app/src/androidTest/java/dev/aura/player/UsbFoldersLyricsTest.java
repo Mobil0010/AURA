@@ -1,21 +1,419 @@
 package dev.aura.player;
-import static org.junit.Assert.*;import org.junit.*;import org.junit.runner.RunWith;import androidx.test.ext.junit.runners.AndroidJUnit4;import androidx.test.platform.app.InstrumentationRegistry;import android.content.*;import android.graphics.*;import android.net.Uri;import android.os.*;import android.view.*;import android.widget.*;import java.io.*;import java.util.*;import java.util.concurrent.*;
+
+import static org.junit.Assert.*;
+import org.junit.*;
+import org.junit.runner.RunWith;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
+import androidx.test.platform.app.InstrumentationRegistry;
+import android.content.*;
+import android.graphics.*;
+import android.net.Uri;
+import android.os.*;
+import android.view.*;
+import android.widget.*;
+import java.io.*;
+import java.util.*;
+import java.util.concurrent.*;
 
 @RunWith(AndroidJUnit4.class)
-@androidx.annotation.OptIn(markerClass=androidx.media3.common.util.UnstableApi.class)
+@androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
 public class UsbFoldersLyricsTest {
- final android.app.Instrumentation inst=InstrumentationRegistry.getInstrumentation();final Context c=inst.getTargetContext();MainActivity activity;String savedTheme;boolean scan;
- @Before public void setup()throws Exception{savedTheme=c.getSharedPreferences("aura",0).getString("appearance","dark");scan=c.getSharedPreferences("aura",0).getBoolean("scanOnLaunch",false);c.getSharedPreferences("aura",0).edit().putBoolean("scanOnLaunch",false).commit();AudioSettings.init(c);AudioSettings.put("mode","android");AudioSettings.put("perfect",false);AudioSettings.put("sox",false);AudioSettings.put("bits",0);AudioSettings.put("device",0);AudioSettings.put("dsd","pcm");}
- @After public void cleanup()throws Exception{if(activity!=null)main(()->{player().stop();player().clearMediaItems();activity.finish();return null;});AudioSettings.put("mode","android");AudioSettings.put("perfect",false);AudioSettings.put("dsd","pcm");c.getSharedPreferences("aura",0).edit().putString("appearance",savedTheme).putBoolean("scanOnLaunch",scan).commit();c.getContentResolver().call(Uri.parse("content://dev.aura.player.test.documents"),"test.reset",null,null);}
- void launch()throws Exception{activity=(MainActivity)inst.startActivitySync(new Intent(c,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));await(()->main(()->get("player")!=null&&!(Boolean)get("libraryLoading")),10000);}
- @Test public void usbChoiceIsDisabledAndDialogUsesBothThemes()throws Exception{assertFalse(EngineMemory.usbPresent(c));for(String theme:List.of("dark","light")){c.getSharedPreferences("aura",0).edit().putString("appearance",theme).commit();launch();main(()->{go("audio");return null;});inst.waitForIdleSync();await(()->main(()->find(activity.getWindow().getDecorView(),"출력 엔진")!=null),10000);main(()->{View choice=find(activity.getWindow().getDecorView(),"출력 엔진");assertNotNull(choice);choice.performClick();return null;});await(()->{var window=inst.getUiAutomation().getRootInActiveWindow();return window!=null&&!window.findAccessibilityNodeInfosByText("DAC 미연결").isEmpty();},5000);Thread.sleep(150);var root=inst.getUiAutomation().getRootInActiveWindow();var nodes=root.findAccessibilityNodeInfosByText("DAC 미연결");assertFalse(nodes.isEmpty());assertTrue(nodes.stream().anyMatch(n->!n.isEnabled()));capture("engine-disabled-"+theme);inst.getUiAutomation().performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK);main(()->{activity.finish();return null;});activity=null;}}
- @Test public void directUsbCanExitImmediatelyAndDetachRestoresPreviousEngine()throws Exception{launch();main(()->{for(String previous:List.of("android","hires")){AudioSettings.put("mode",previous);EngineMemory.enteringUsb(c);AudioSettings.put("mode","usb");AudioSettings.put("perfect",true);AudioSettings.put("dsd","dop");Object routing=field(PlaybackService.instance,"routing");var detach=routing.getClass().getDeclaredMethod("detach");detach.setAccessible(true);detach.invoke(routing);assertEquals(previous,AudioSettings.current.mode());assertFalse(AudioSettings.current.perfect());assertEquals("pcm",AudioSettings.current.dsd());}for(String next:List.of("hires","android")){AudioSettings.put("mode","usb");AudioSettings.put("perfect",true);AudioSettings.put("dsd","dop");AudioUi ui=new AudioUi(activity,new LinearLayout(activity),p->{});var change=AudioUi.class.getDeclaredMethod("changeMode",String.class);change.setAccessible(true);change.invoke(ui,next);assertEquals(next,AudioSettings.current.mode());assertFalse(AudioSettings.current.perfect());assertFalse(c.getSharedPreferences("playback",0).getBoolean("preferDirectUsb",true));assertEquals("pcm",AudioSettings.current.dsd());}return null;});}
- @Test public void localSafScanUsesFolderPhotoWithoutTreatingItAsMusic()throws Exception{Uri provider=Uri.parse("content://dev.aura.player.test.documents");c.getContentResolver().call(provider,"test.reset",null,null);Uri root=android.provider.DocumentsContract.buildTreeDocumentUri(provider.getAuthority(),"A");new File(c.getFilesDir(),"library-metadata.json").delete();var library=new Library(c);library.scan(List.of(root),p->{});var before=c.getContentResolver().call(provider,"test.stats",null,null);c.getContentResolver().call(provider,"test.photos",null,null);var songs=library.scan(List.of(root),p->{});assertEquals(before.getInt("open:A/sub/b.wav"),c.getContentResolver().call(provider,"test.stats",null,null).getInt("open:A/sub/b.wav"));assertEquals(2,songs.size());Track nested=songs.stream().filter(t->t.uri.contains("b.wav")).findFirst().orElseThrow();Bitmap image=BitmapFactory.decodeFile(Library.artFile(c,nested.uri).toString());assertNotNull(image);assertTrue(Color.green(image.getPixel(0,0))>200);image.recycle();}
- @Test public void firstSongForEveryFolderIsPrecomputedInTrackOrder()throws Exception{var path=List.of(new FolderTree.Part("root","Music"),new FolderTree.Part("album","Album"));Track ten=new Track("file:///10.flac","Ten","A","Ten","",0,"").withNumbers(10,1).withPath(path),one=new Track("file:///01.flac","One","A","One","",0,"").withNumbers(1,1).withPath(path);var q=LibraryQuery.run(List.of(ten,one),"all","","폴더");assertTrue(q.folders.nodes.values().stream().allMatch(n->n.first==one));}
- @Test public void newTrackResetsFullScreenLyricsScroll()throws Exception{launch();File tone=copyTone("lyrics-reset.wav");List<Track> tracks=new ArrayList<>();for(String title:List.of("First","Second")){File lrc=new File(c.getCacheDir(),title+"-reset.lrc");StringBuilder lines=new StringBuilder();for(int n=0;n<50;n++)lines.append(String.format(Locale.ROOT,"[%02d:%02d.00]%s line %d\n",n/6,n%6*10,title,n));java.nio.file.Files.write(lrc.toPath(),lines.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));tracks.add(new Track(Uri.fromFile(tone).buildUpon().fragment(title).build().toString(),title,"AURA","Album","",3000,Uri.fromFile(lrc).toString()));}main(()->{set("tracks",tracks);player().setMediaItems(tracks.stream().map(Track::item).collect(java.util.stream.Collectors.toList()));player().prepare();player().pause();go("lyrics");return null;});await(()->main(()->((List<?>)get("lyricViews")).size()==50),7000);main(()->{((PlayerScrollView)get("scroll")).scrollTo(0,Ui.dp(c,1200));set("lyricsManualUntil",SystemClock.elapsedRealtime()+60000);return null;});assertTrue(main(()->((PlayerScrollView)get("scroll")).getScrollY())>100);main(()->{player().seekTo(1,0);return null;});await(()->main(()->tracks.get(1).uri.equals(get("lyricsRenderedTrack"))&&((List<?>)get("lyricViews")).size()==50),7000);Thread.sleep(350);assertEquals(0,(int)main(()->((PlayerScrollView)get("scroll")).getScrollY()));}
- File copyTone(String name)throws Exception{File file=new File(c.getCacheDir(),name);try(var in=inst.getContext().getAssets().open("tone.wav");var out=new FileOutputStream(file)){out.write(Io.read(in));}return file;}
- @Test public void folderCoversAndFallbackIconsAreRecycledInBothThemes()throws Exception{File root=new File(c.getCacheDir(),"folder-preview");root.mkdirs();List<Track> tracks=new ArrayList<>();for(String name:List.of("Quiet Tides","Coastal Light","No Artwork")){File folder=new File(root,name);folder.mkdirs();File tone=new File(folder,"01.wav");try(var in=inst.getContext().getAssets().open("tone.wav");var out=new FileOutputStream(tone)){out.write(Io.read(in));}Track track=new Track(Uri.fromFile(tone).toString(),"First Light","AURA Sessions",name,name,3000,"").withNumbers(1,1).withPath(List.of(new FolderTree.Part(Uri.fromFile(root).toString(),"Music"),new FolderTree.Part(Uri.fromFile(folder).toString(),name)));Library.artFile(c,track.uri).delete();if(name.equals("Quiet Tides")){Bitmap cover=new SongInfoDesignTest().designCover();try{ArtworkStore.save(c,track.uri,cover);}finally{cover.recycle();}}if(name.equals("Coastal Light")){Bitmap cover=new SongInfoDesignTest().designCover();try(var out=new FileOutputStream(new File(folder,"cover.jpg"))){cover.compress(Bitmap.CompressFormat.JPEG,95,out);}cover.recycle();}tracks.add(track);}ArtworkView.clearCache();for(String theme:List.of("dark","light")){c.getSharedPreferences("aura",0).edit().putString("appearance",theme).commit();launch();String cursor=new FolderTree(tracks).nodes.values().stream().filter(n->n.name.equals("Music")).findFirst().orElseThrow().id;main(()->{set("tracks",tracks);set("tab","폴더");set("source","local");set("folderCursor",cursor);set("query","");go("library");return null;});await(()->main(()->get("activeList")!=null),5000);await(()->Library.artFile(c,tracks.get(1).uri).isFile(),7000);Thread.sleep(500);capture("folder-covers-"+theme);main(()->{activity.finish();return null;});activity=null;}}
- View find(View v,String description){if(description.contentEquals(v.getContentDescription()==null?"":v.getContentDescription()))return v;if(v instanceof ViewGroup group)for(int i=0;i<group.getChildCount();i++){View found=find(group.getChildAt(i),description);if(found!=null)return found;}return null;}
- void capture(String name)throws Exception{Bitmap image=inst.getUiAutomation().takeScreenshot();try(var out=new FileOutputStream(new File(c.getExternalFilesDir(null),name+".png"))){image.compress(Bitmap.CompressFormat.PNG,100,out);}image.recycle();}
- androidx.media3.session.MediaController player()throws Exception{return (androidx.media3.session.MediaController)get("player");}Object field(Object o,String key)throws Exception{var f=o.getClass().getDeclaredField(key);f.setAccessible(true);return f.get(o);}Object get(String key)throws Exception{return field(activity,key);}void set(String key,Object value)throws Exception{var f=MainActivity.class.getDeclaredField(key);f.setAccessible(true);f.set(activity,value);}void go(String p)throws Exception{var m=MainActivity.class.getDeclaredMethod("go",String.class);m.setAccessible(true);m.invoke(activity,p);} <T>T main(Callable<T> action)throws Exception{FutureTask<T> task=new FutureTask<>(action);inst.runOnMainSync(task);return task.get(20,TimeUnit.SECONDS);}void await(Callable<Boolean> condition,long timeout)throws Exception{long end=SystemClock.elapsedRealtime()+timeout;while(!condition.call()&&SystemClock.elapsedRealtime()<end)Thread.sleep(40);assertTrue(condition.call());}
+    final android.app.Instrumentation inst = InstrumentationRegistry.getInstrumentation();
+    final Context c = inst.getTargetContext();
+    MainActivity activity;
+    String savedTheme;
+    boolean scan;
+
+    @Before
+    public void setup() throws Exception {
+        savedTheme = c.getSharedPreferences("aura", 0).getString("appearance", "dark");
+        scan = c.getSharedPreferences("aura", 0).getBoolean("scanOnLaunch", false);
+        c.getSharedPreferences("aura", 0).edit().putBoolean("scanOnLaunch", false).commit();
+        AudioSettings.init(c);
+        AudioSettings.put("mode", "android");
+        AudioSettings.put("perfect", false);
+        AudioSettings.put("sox", false);
+        AudioSettings.put("bits", 0);
+        AudioSettings.put("device", 0);
+        AudioSettings.put("dsd", "pcm");
+    }
+
+    @After
+    public void cleanup() throws Exception {
+        if (activity != null)
+            main(
+                    () -> {
+                        player().stop();
+                        player().clearMediaItems();
+                        activity.finish();
+                        return null;
+                    });
+        AudioSettings.put("mode", "android");
+        AudioSettings.put("perfect", false);
+        AudioSettings.put("dsd", "pcm");
+        c.getSharedPreferences("aura", 0)
+                .edit()
+                .putString("appearance", savedTheme)
+                .putBoolean("scanOnLaunch", scan)
+                .commit();
+        c.getContentResolver()
+                .call(
+                        Uri.parse("content://dev.aura.player.test.documents"),
+                        "test.reset",
+                        null,
+                        null);
+    }
+
+    void launch() throws Exception {
+        activity =
+                (MainActivity)
+                        inst.startActivitySync(
+                                new Intent(c, MainActivity.class)
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        await(() -> main(() -> get("player") != null && !(Boolean) get("libraryLoading")), 10000);
+    }
+
+    @Test
+    public void usbChoiceIsDisabledAndDialogUsesBothThemes() throws Exception {
+        assertFalse(EngineMemory.usbPresent(c));
+        for (String theme : List.of("dark", "light")) {
+            c.getSharedPreferences("aura", 0).edit().putString("appearance", theme).commit();
+            launch();
+            main(
+                    () -> {
+                        go("audio");
+                        return null;
+                    });
+            inst.waitForIdleSync();
+            await(
+                    () -> main(() -> find(activity.getWindow().getDecorView(), "출력 엔진") != null),
+                    10000);
+            main(
+                    () -> {
+                        View choice = find(activity.getWindow().getDecorView(), "출력 엔진");
+                        assertNotNull(choice);
+                        choice.performClick();
+                        return null;
+                    });
+            await(
+                    () -> {
+                        var window = inst.getUiAutomation().getRootInActiveWindow();
+                        return window != null
+                                && !window.findAccessibilityNodeInfosByText("DAC 미연결").isEmpty();
+                    },
+                    5000);
+            Thread.sleep(150);
+            var root = inst.getUiAutomation().getRootInActiveWindow();
+            var nodes = root.findAccessibilityNodeInfosByText("DAC 미연결");
+            assertFalse(nodes.isEmpty());
+            assertTrue(nodes.stream().anyMatch(n -> !n.isEnabled()));
+            capture("engine-disabled-" + theme);
+            inst.getUiAutomation()
+                    .performGlobalAction(
+                            android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK);
+            main(
+                    () -> {
+                        activity.finish();
+                        return null;
+                    });
+            activity = null;
+        }
+    }
+
+    @Test
+    public void directUsbCanExitImmediatelyAndDetachRestoresPreviousEngine() throws Exception {
+        launch();
+        main(
+                () -> {
+                    for (String previous : List.of("android", "hires")) {
+                        AudioSettings.put("mode", previous);
+                        EngineMemory.enteringUsb(c);
+                        AudioSettings.put("mode", "usb");
+                        AudioSettings.put("perfect", true);
+                        AudioSettings.put("dsd", "dop");
+                        Object routing = field(PlaybackService.instance, "routing");
+                        var detach = routing.getClass().getDeclaredMethod("detach");
+                        detach.setAccessible(true);
+                        detach.invoke(routing);
+                        assertEquals(previous, AudioSettings.current.mode());
+                        assertFalse(AudioSettings.current.perfect());
+                        assertEquals("pcm", AudioSettings.current.dsd());
+                    }
+                    for (String next : List.of("hires", "android")) {
+                        AudioSettings.put("mode", "usb");
+                        AudioSettings.put("perfect", true);
+                        AudioSettings.put("dsd", "dop");
+                        AudioUi ui = new AudioUi(activity, new LinearLayout(activity), p -> {});
+                        var change = AudioUi.class.getDeclaredMethod("changeMode", String.class);
+                        change.setAccessible(true);
+                        change.invoke(ui, next);
+                        assertEquals(next, AudioSettings.current.mode());
+                        assertFalse(AudioSettings.current.perfect());
+                        assertFalse(
+                                c.getSharedPreferences("playback", 0)
+                                        .getBoolean("preferDirectUsb", true));
+                        assertEquals("pcm", AudioSettings.current.dsd());
+                    }
+                    return null;
+                });
+    }
+
+    @Test
+    public void localSafScanUsesFolderPhotoWithoutTreatingItAsMusic() throws Exception {
+        Uri provider = Uri.parse("content://dev.aura.player.test.documents");
+        c.getContentResolver().call(provider, "test.reset", null, null);
+        Uri root =
+                android.provider.DocumentsContract.buildTreeDocumentUri(
+                        provider.getAuthority(), "A");
+        new File(c.getFilesDir(), "library-metadata.json").delete();
+        var library = new Library(c);
+        library.scan(List.of(root), p -> {});
+        var before = c.getContentResolver().call(provider, "test.stats", null, null);
+        c.getContentResolver().call(provider, "test.photos", null, null);
+        var songs = library.scan(List.of(root), p -> {});
+        assertEquals(
+                before.getInt("open:A/sub/b.wav"),
+                c.getContentResolver()
+                        .call(provider, "test.stats", null, null)
+                        .getInt("open:A/sub/b.wav"));
+        assertEquals(2, songs.size());
+        Track nested =
+                songs.stream().filter(t -> t.uri.contains("b.wav")).findFirst().orElseThrow();
+        Bitmap image = BitmapFactory.decodeFile(Library.artFile(c, nested.uri).toString());
+        assertNotNull(image);
+        assertTrue(Color.green(image.getPixel(0, 0)) > 200);
+        image.recycle();
+    }
+
+    @Test
+    public void firstSongForEveryFolderIsPrecomputedInTrackOrder() throws Exception {
+        var path =
+                List.of(
+                        new FolderTree.Part("root", "Music"),
+                        new FolderTree.Part("album", "Album"));
+        Track
+                ten =
+                        new Track("file:///10.flac", "Ten", "A", "Ten", "", 0, "")
+                                .withNumbers(10, 1)
+                                .withPath(path),
+                one =
+                        new Track("file:///01.flac", "One", "A", "One", "", 0, "")
+                                .withNumbers(1, 1)
+                                .withPath(path);
+        var q = LibraryQuery.run(List.of(ten, one), "all", "", "폴더");
+        assertTrue(q.folders.nodes.values().stream().allMatch(n -> n.first == one));
+    }
+
+    @Test
+    public void newTrackResetsFullScreenLyricsScroll() throws Exception {
+        launch();
+        File tone = copyTone("lyrics-reset.wav");
+        List<Track> tracks = new ArrayList<>();
+        for (String title : List.of("First", "Second")) {
+            File lrc = new File(c.getCacheDir(), title + "-reset.lrc");
+            StringBuilder lines = new StringBuilder();
+            for (int n = 0; n < 50; n++)
+                lines.append(
+                        String.format(
+                                Locale.ROOT,
+                                "[%02d:%02d.00]%s line %d\n",
+                                n / 6,
+                                n % 6 * 10,
+                                title,
+                                n));
+            java.nio.file.Files.write(
+                    lrc.toPath(),
+                    lines.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            tracks.add(
+                    new Track(
+                            Uri.fromFile(tone).buildUpon().fragment(title).build().toString(),
+                            title,
+                            "AURA",
+                            "Album",
+                            "",
+                            3000,
+                            Uri.fromFile(lrc).toString()));
+        }
+        main(
+                () -> {
+                    set("tracks", tracks);
+                    player().setMediaItems(
+                                    tracks.stream()
+                                            .map(Track::item)
+                                            .collect(java.util.stream.Collectors.toList()));
+                    player().prepare();
+                    player().pause();
+                    go("lyrics");
+                    return null;
+                });
+        await(() -> main(() -> ((List<?>) get("lyricViews")).size() == 50), 7000);
+        main(
+                () -> {
+                    ((PlayerScrollView) get("scroll")).scrollTo(0, Ui.dp(c, 1200));
+                    set("lyricsManualUntil", SystemClock.elapsedRealtime() + 60000);
+                    return null;
+                });
+        assertTrue(main(() -> ((PlayerScrollView) get("scroll")).getScrollY()) > 100);
+        main(
+                () -> {
+                    player().seekTo(1, 0);
+                    return null;
+                });
+        await(
+                () ->
+                        main(
+                                () ->
+                                        tracks.get(1).uri.equals(get("lyricsRenderedTrack"))
+                                                && ((List<?>) get("lyricViews")).size() == 50),
+                7000);
+        Thread.sleep(350);
+        assertEquals(0, (int) main(() -> ((PlayerScrollView) get("scroll")).getScrollY()));
+    }
+
+    File copyTone(String name) throws Exception {
+        File file = new File(c.getCacheDir(), name);
+        try (var in = inst.getContext().getAssets().open("tone.wav");
+                var out = new FileOutputStream(file)) {
+            out.write(Io.read(in));
+        }
+        return file;
+    }
+
+    @Test
+    public void folderCoversAndFallbackIconsAreRecycledInBothThemes() throws Exception {
+        File root = new File(c.getCacheDir(), "folder-preview");
+        root.mkdirs();
+        List<Track> tracks = new ArrayList<>();
+        for (String name : List.of("Quiet Tides", "Coastal Light", "No Artwork")) {
+            File folder = new File(root, name);
+            folder.mkdirs();
+            File tone = new File(folder, "01.wav");
+            try (var in = inst.getContext().getAssets().open("tone.wav");
+                    var out = new FileOutputStream(tone)) {
+                out.write(Io.read(in));
+            }
+            Track track =
+                    new Track(
+                                    Uri.fromFile(tone).toString(),
+                                    "First Light",
+                                    "AURA Sessions",
+                                    name,
+                                    name,
+                                    3000,
+                                    "")
+                            .withNumbers(1, 1)
+                            .withPath(
+                                    List.of(
+                                            new FolderTree.Part(
+                                                    Uri.fromFile(root).toString(), "Music"),
+                                            new FolderTree.Part(
+                                                    Uri.fromFile(folder).toString(), name)));
+            Library.artFile(c, track.uri).delete();
+            if (name.equals("Quiet Tides")) {
+                Bitmap cover = new SongInfoDesignTest().designCover();
+                try {
+                    ArtworkStore.save(c, track.uri, cover);
+                } finally {
+                    cover.recycle();
+                }
+            }
+            if (name.equals("Coastal Light")) {
+                Bitmap cover = new SongInfoDesignTest().designCover();
+                try (var out = new FileOutputStream(new File(folder, "cover.jpg"))) {
+                    cover.compress(Bitmap.CompressFormat.JPEG, 95, out);
+                }
+                cover.recycle();
+            }
+            tracks.add(track);
+        }
+        ArtworkView.clearCache();
+        for (String theme : List.of("dark", "light")) {
+            c.getSharedPreferences("aura", 0).edit().putString("appearance", theme).commit();
+            launch();
+            String cursor =
+                    new FolderTree(tracks)
+                            .nodes.values().stream()
+                                    .filter(n -> n.name.equals("Music"))
+                                    .findFirst()
+                                    .orElseThrow()
+                                    .id;
+            main(
+                    () -> {
+                        set("tracks", tracks);
+                        set("tab", "폴더");
+                        set("source", "local");
+                        set("folderCursor", cursor);
+                        set("query", "");
+                        go("library");
+                        return null;
+                    });
+            await(() -> main(() -> get("activeList") != null), 5000);
+            await(() -> Library.artFile(c, tracks.get(1).uri).isFile(), 7000);
+            Thread.sleep(500);
+            capture("folder-covers-" + theme);
+            main(
+                    () -> {
+                        activity.finish();
+                        return null;
+                    });
+            activity = null;
+        }
+    }
+
+    View find(View v, String description) {
+        if (description.contentEquals(
+                v.getContentDescription() == null ? "" : v.getContentDescription())) return v;
+        if (v instanceof ViewGroup group)
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View found = find(group.getChildAt(i), description);
+                if (found != null) return found;
+            }
+        return null;
+    }
+
+    void capture(String name) throws Exception {
+        Bitmap image = inst.getUiAutomation().takeScreenshot();
+        try (var out = new FileOutputStream(new File(c.getExternalFilesDir(null), name + ".png"))) {
+            image.compress(Bitmap.CompressFormat.PNG, 100, out);
+        }
+        image.recycle();
+    }
+
+    androidx.media3.session.MediaController player() throws Exception {
+        return (androidx.media3.session.MediaController) get("player");
+    }
+
+    Object field(Object o, String key) throws Exception {
+        var f = o.getClass().getDeclaredField(key);
+        f.setAccessible(true);
+        return f.get(o);
+    }
+
+    Object get(String key) throws Exception {
+        return field(activity, key);
+    }
+
+    void set(String key, Object value) throws Exception {
+        var f = MainActivity.class.getDeclaredField(key);
+        f.setAccessible(true);
+        f.set(activity, value);
+    }
+
+    void go(String p) throws Exception {
+        var m = MainActivity.class.getDeclaredMethod("go", String.class);
+        m.setAccessible(true);
+        m.invoke(activity, p);
+    }
+
+    <T> T main(Callable<T> action) throws Exception {
+        FutureTask<T> task = new FutureTask<>(action);
+        inst.runOnMainSync(task);
+        return task.get(20, TimeUnit.SECONDS);
+    }
+
+    void await(Callable<Boolean> condition, long timeout) throws Exception {
+        long end = SystemClock.elapsedRealtime() + timeout;
+        while (!condition.call() && SystemClock.elapsedRealtime() < end) Thread.sleep(40);
+        assertTrue(condition.call());
+    }
 }

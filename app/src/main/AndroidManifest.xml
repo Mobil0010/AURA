@@ -10,23 +10,82 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE"/>
-    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
-    <uses-feature android:name="android.hardware.usb.host" android:required="false"/>
-    <application android:name=".AuraApplication" android:label="AURA" android:theme="@style/Theme.Aura" android:icon="@drawable/ic_aura" android:usesCleartextTraffic="true" android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules" android:supportsRtl="true">
-        <meta-data android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME" android:value="dev.aura.player.CastOptions"/>
-        <activity android:name=".MainActivity" android:exported="true" android:resizeableActivity="true">
-            <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-feature
+        android:name="android.hardware.usb.host"
+        android:required="false"
+    />
+    <application
+        android:name=".AuraApplication"
+        android:label="AURA"
+        android:theme="@style/Theme.Aura"
+        android:icon="@drawable/ic_aura"
+        android:usesCleartextTraffic="true"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:supportsRtl="true"
+    >
+        <meta-data
+            android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+            android:value="dev.aura.player.CastOptions"
+        />
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:resizeableActivity="true"
+        >
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
         </activity>
-        <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.updates" android:exported="false" android:grantUriPermissions="true">
-            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/update_paths"/>
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.updates"
+            android:exported="false"
+            android:grantUriPermissions="true"
+        >
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/update_paths"
+            />
         </provider>
-        <receiver android:name=".MusicWidget" android:exported="false"><intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter><meta-data android:name="android.appwidget.provider" android:resource="@xml/music_widget" /></receiver>
-        <service android:name=".OfflineService" android:exported="false" android:foregroundServiceType="dataSync" />
-        <service android:name=".CastRelayService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
-        <service android:name=".LibraryScanService" android:exported="false" android:foregroundServiceType="dataSync" />
-        <service android:name=".PlaybackService" android:exported="true" android:foregroundServiceType="mediaPlayback">
-            <intent-filter><action android:name="androidx.media3.session.MediaSessionService" /></intent-filter>
+        <receiver
+            android:name=".MusicWidget"
+            android:exported="false"
+        >
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/music_widget"
+            />
+        </receiver>
+        <service
+            android:name=".OfflineService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"
+        />
+        <service
+            android:name=".CastRelayService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback"
+        />
+        <service
+            android:name=".LibraryScanService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"
+        />
+        <service
+            android:name=".PlaybackService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback"
+        >
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
         </service>
     </application>
 </manifest>

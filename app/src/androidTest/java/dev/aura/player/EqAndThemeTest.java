@@ -1,20 +1,274 @@
 package dev.aura.player;
 
 import static org.junit.Assert.*;
-import org.junit.*;import org.junit.runner.RunWith;import androidx.test.ext.junit.runners.AndroidJUnit4;import androidx.test.platform.app.InstrumentationRegistry;
-import android.content.*;import android.os.*;import android.view.*;import android.widget.*;import java.nio.*;import java.util.*;import java.util.concurrent.*;
+import org.junit.*;
+import org.junit.runner.RunWith;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
+import androidx.test.platform.app.InstrumentationRegistry;
+import android.content.*;
+import android.os.*;
+import android.view.*;
+import android.widget.*;
+import java.nio.*;
+import java.util.*;
+import java.util.concurrent.*;
 
 @RunWith(AndroidJUnit4.class)
 public class EqAndThemeTest {
-    final Context context=InstrumentationRegistry.getInstrumentation().getTargetContext();
-    @Before public void setup(){AudioSettings.init(context);AudioSettings.put("mode","android");AudioSettings.put("perfect",false);AudioSettings.put("eqMode","parametric");AudioSettings.put("eq",true);AudioSettings.put("autoEqPreamp",true);AudioSettings.put("preamp",0);AudioSettings.put("limiter",false);AudioSettings.put("crossfeed",0);AudioSettings.put("balance",0);AudioSettings.put("dither","off");AudioSettings.put("sox",false);for(int i=0;i<7;i++)AudioSettings.band(i,new AudioSettings.Band(AudioSettings.GRAPHIC_FREQUENCIES[i],0,1,"peak"));}
-    @After public void cleanup(){AudioSettings.put("eq",false);AudioSettings.put("autoEqPreamp",true);AudioSettings.put("preamp",0);AudioSettings.put("eqMode","parametric");context.getSharedPreferences("aura",0).edit().putString("appearance","dark").commit();Ui.configure(context);}
-    @Test public void overlappingFiltersUseCombinedPeakAndPreserveManual(){AudioSettings.band(0,new AudioSettings.Band(80,9,1,"low"));AudioSettings.band(1,new AudioSettings.Band(90,8,2,"peak"));double peak=EqHeadroom.peakDb(AudioSettings.current.bands(),48000);assertTrue(peak>10);double dense=0;for(int i=0;i<24001;i++){double f=i;double total=0;for(var b:AudioSettings.current.bands())total+=Biquad.response(Biquad.coefficients(b,48000),f,48000);dense=Math.max(dense,total);}assertEquals(dense,peak,.03);assertEquals(-peak-1,EqHeadroom.appliedPreamp(AudioSettings.current,48000),.001);assertEquals(0,AudioSettings.current.preamp(),0);AudioSettings.put("preamp",-24);assertEquals(-24,EqHeadroom.appliedPreamp(AudioSettings.current,48000),.001);AudioSettings.put("autoEqPreamp",false);assertEquals(0,EqHeadroom.compensationDb(AudioSettings.current,48000),0);}
-    @Test public void boostedFullScaleBassAndLiveToggleAvoidClipping(){AudioSettings.band(0,new AudioSettings.Band(60,12,1,"peak"));ByteBuffer tone=ByteBuffer.allocate(48000*4).order(ByteOrder.LITTLE_ENDIAN);for(int i=0;i<48000;i++)tone.putFloat((float)(.98*Math.sin(2*Math.PI*60*i/48000)));tone.flip();try(PcmDsp dsp=new PcmDsp(48000,48000,1,32,32,AudioSettings.current,false,true)){assertTrue(peak(dsp.process(tone,4))<.96);AudioSettings.put("autoEqPreamp",false);assertEquals(1,peak(dsp.process(tone,4)),.00001);AudioSettings.put("autoEqPreamp",true);assertTrue(peak(dsp.process(tone,4))<.96);}AudioSettings.put("perfect",true);assertEquals(0,EqHeadroom.compensationDb(AudioSettings.current,48000),0);AudioSettings.put("perfect",false);AudioSettings.put("eq",false);assertEquals(0,EqHeadroom.compensationDb(AudioSettings.current,48000),0);}
-    @Test public void graphicFrequenciesStayFixedAndModesRetainIndependentGains(){AudioSettings.band(0,new AudioSettings.Band(83,3,2,"low"));AudioSettings.put("eqMode","graphic");AudioSettings.band(0,new AudioSettings.Band(9999,8,8,"high"));assertEquals(new AudioSettings.Band(60,8,1,"peak"),AudioSettings.current.bands().get(0));AudioSettings.put("eqMode","parametric");assertEquals(new AudioSettings.Band(83,3,2,"low"),AudioSettings.current.bands().get(0));AudioSettings.put("eqMode","graphic");assertEquals(8,AudioSettings.current.bands().get(0).gain(),0);}
-    @Test public void artworkBindHasNoMainThreadDiskAccess()throws Exception{main(()->{StrictMode.ThreadPolicy old=StrictMode.getThreadPolicy();try{PlaybackBudget.get(context);ArtworkView.clearCache();ArtworkView artwork=new ArtworkView(context,new Track("content://cover/1","Title","Artist","Album","Folder",1000,""),44);StrictMode.setThreadPolicy(new StrictMode.ThreadPolicy.Builder().detectDiskReads().penaltyDeath().build());for(int i=0;i<100;i++)artwork.bind(new Track("content://cover/"+i,"Title","Artist","Album","Folder",1000,""));}finally{StrictMode.setThreadPolicy(old);}return null;});}
-    @Test public void bothThemesHaveReadableTextAndPersistPreference()throws Exception{for(String mode:new String[]{"light","dark"}){context.getSharedPreferences("aura",0).edit().putString("appearance",mode).commit();Ui.configure(context);assertEquals(mode.equals("dark"),Ui.dark);assertTrue(androidx.core.graphics.ColorUtils.calculateContrast(Ui.INK,Ui.BG)>10);assertTrue(androidx.core.graphics.ColorUtils.calculateContrast(Ui.MUTED,Ui.BG)>4.5);assertTrue(androidx.core.graphics.ColorUtils.calculateContrast(Ui.MINT,Ui.BG)>4.5);assertTrue(androidx.core.graphics.ColorUtils.calculateContrast(Ui.onAccent(),Ui.MINT)>4.5);MainActivity activity=(MainActivity)InstrumentationRegistry.getInstrumentation().startActivitySync(new Intent(context,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));try{main(()->{var go=MainActivity.class.getDeclaredMethod("go",String.class);go.setAccessible(true);go.invoke(activity,"settings");assertEquals(mode.equals("dark"),Ui.dark);return null;});InstrumentationRegistry.getInstrumentation().waitForIdleSync();android.graphics.Bitmap screenshot=InstrumentationRegistry.getInstrumentation().getUiAutomation().takeScreenshot();if(screenshot!=null)try(var output=new java.io.FileOutputStream(new java.io.File(context.getExternalFilesDir(null),"theme-"+mode+".png"))){screenshot.compress(android.graphics.Bitmap.CompressFormat.PNG,100,output);}}finally{main(()->{activity.finish();return null;});}}}
-    @Test public void songRowsReuseViewsAcrossThousandBinds()throws Exception{MainActivity activity=(MainActivity)InstrumentationRegistry.getInstrumentation().startActivitySync(new Intent(context,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));try{main(()->{var factory=MainActivity.class.getDeclaredMethod("trackRow",Track.class,List.class);factory.setAccessible(true);Track first=new Track("content://row/1","First","Artist","Album","Folder",1000,"");View row=(View)factory.invoke(activity,first,List.of(first));View cover=((ViewGroup)row).getChildAt(0);var bind=row.getClass().getDeclaredMethod("bind",Track.class,List.class);bind.setAccessible(true);for(int i=0;i<1000;i++){Track next=new Track("content://row/"+i,"Song "+i,"Artist","Album","Folder",1000,"");bind.invoke(row,next,List.of(next));assertSame(cover,((ViewGroup)row).getChildAt(0));}assertTrue(((TextView)((ViewGroup)((ViewGroup)row).getChildAt(1)).getChildAt(0)).getText().toString().contains("999"));return null;});}finally{main(()->{activity.finish();return null;});}}
-    private double peak(ByteBuffer samples){double peak=0;while(samples.hasRemaining()){float value=samples.getFloat();assertTrue(Float.isFinite(value));peak=Math.max(peak,Math.abs(value));}return peak;}
-    private <T>T main(Callable<T> work)throws Exception{FutureTask<T> task=new FutureTask<>(work);InstrumentationRegistry.getInstrumentation().runOnMainSync(task);return task.get(15,TimeUnit.SECONDS);}
+    final Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+
+    @Before
+    public void setup() {
+        AudioSettings.init(context);
+        AudioSettings.put("mode", "android");
+        AudioSettings.put("perfect", false);
+        AudioSettings.put("eqMode", "parametric");
+        AudioSettings.put("eq", true);
+        AudioSettings.put("autoEqPreamp", true);
+        AudioSettings.put("preamp", 0);
+        AudioSettings.put("limiter", false);
+        AudioSettings.put("crossfeed", 0);
+        AudioSettings.put("balance", 0);
+        AudioSettings.put("dither", "off");
+        AudioSettings.put("sox", false);
+        for (int i = 0; i < 7; i++)
+            AudioSettings.band(
+                    i, new AudioSettings.Band(AudioSettings.GRAPHIC_FREQUENCIES[i], 0, 1, "peak"));
+    }
+
+    @After
+    public void cleanup() {
+        AudioSettings.put("eq", false);
+        AudioSettings.put("autoEqPreamp", true);
+        AudioSettings.put("preamp", 0);
+        AudioSettings.put("eqMode", "parametric");
+        context.getSharedPreferences("aura", 0).edit().putString("appearance", "dark").commit();
+        Ui.configure(context);
+    }
+
+    @Test
+    public void overlappingFiltersUseCombinedPeakAndPreserveManual() {
+        AudioSettings.band(0, new AudioSettings.Band(80, 9, 1, "low"));
+        AudioSettings.band(1, new AudioSettings.Band(90, 8, 2, "peak"));
+        double peak = EqHeadroom.peakDb(AudioSettings.current.bands(), 48000);
+        assertTrue(peak > 10);
+        double dense = 0;
+        for (int i = 0; i < 24001; i++) {
+            double f = i;
+            double total = 0;
+            for (var b : AudioSettings.current.bands())
+                total += Biquad.response(Biquad.coefficients(b, 48000), f, 48000);
+            dense = Math.max(dense, total);
+        }
+        assertEquals(dense, peak, .03);
+        assertEquals(-peak - 1, EqHeadroom.appliedPreamp(AudioSettings.current, 48000), .001);
+        assertEquals(0, AudioSettings.current.preamp(), 0);
+        AudioSettings.put("preamp", -24);
+        assertEquals(-24, EqHeadroom.appliedPreamp(AudioSettings.current, 48000), .001);
+        AudioSettings.put("autoEqPreamp", false);
+        assertEquals(0, EqHeadroom.compensationDb(AudioSettings.current, 48000), 0);
+    }
+
+    @Test
+    public void boostedFullScaleBassAndLiveToggleAvoidClipping() {
+        AudioSettings.band(0, new AudioSettings.Band(60, 12, 1, "peak"));
+        ByteBuffer tone = ByteBuffer.allocate(48000 * 4).order(ByteOrder.LITTLE_ENDIAN);
+        for (int i = 0; i < 48000; i++)
+            tone.putFloat((float) (.98 * Math.sin(2 * Math.PI * 60 * i / 48000)));
+        tone.flip();
+        try (PcmDsp dsp = new PcmDsp(48000, 48000, 1, 32, 32, AudioSettings.current, false, true)) {
+            assertTrue(peak(dsp.process(tone, 4)) < .96);
+            AudioSettings.put("autoEqPreamp", false);
+            assertEquals(1, peak(dsp.process(tone, 4)), .00001);
+            AudioSettings.put("autoEqPreamp", true);
+            assertTrue(peak(dsp.process(tone, 4)) < .96);
+        }
+        AudioSettings.put("perfect", true);
+        assertEquals(0, EqHeadroom.compensationDb(AudioSettings.current, 48000), 0);
+        AudioSettings.put("perfect", false);
+        AudioSettings.put("eq", false);
+        assertEquals(0, EqHeadroom.compensationDb(AudioSettings.current, 48000), 0);
+    }
+
+    @Test
+    public void graphicFrequenciesStayFixedAndModesRetainIndependentGains() {
+        AudioSettings.band(0, new AudioSettings.Band(83, 3, 2, "low"));
+        AudioSettings.put("eqMode", "graphic");
+        AudioSettings.band(0, new AudioSettings.Band(9999, 8, 8, "high"));
+        assertEquals(
+                new AudioSettings.Band(60, 8, 1, "peak"), AudioSettings.current.bands().get(0));
+        AudioSettings.put("eqMode", "parametric");
+        assertEquals(new AudioSettings.Band(83, 3, 2, "low"), AudioSettings.current.bands().get(0));
+        AudioSettings.put("eqMode", "graphic");
+        assertEquals(8, AudioSettings.current.bands().get(0).gain(), 0);
+    }
+
+    @Test
+    public void artworkBindHasNoMainThreadDiskAccess() throws Exception {
+        main(
+                () -> {
+                    StrictMode.ThreadPolicy old = StrictMode.getThreadPolicy();
+                    try {
+                        PlaybackBudget.get(context);
+                        ArtworkView.clearCache();
+                        ArtworkView artwork =
+                                new ArtworkView(
+                                        context,
+                                        new Track(
+                                                "content://cover/1",
+                                                "Title",
+                                                "Artist",
+                                                "Album",
+                                                "Folder",
+                                                1000,
+                                                ""),
+                                        44);
+                        StrictMode.setThreadPolicy(
+                                new StrictMode.ThreadPolicy.Builder()
+                                        .detectDiskReads()
+                                        .penaltyDeath()
+                                        .build());
+                        for (int i = 0; i < 100; i++)
+                            artwork.bind(
+                                    new Track(
+                                            "content://cover/" + i,
+                                            "Title",
+                                            "Artist",
+                                            "Album",
+                                            "Folder",
+                                            1000,
+                                            ""));
+                    } finally {
+                        StrictMode.setThreadPolicy(old);
+                    }
+                    return null;
+                });
+    }
+
+    @Test
+    public void bothThemesHaveReadableTextAndPersistPreference() throws Exception {
+        for (String mode : new String[] {"light", "dark"}) {
+            context.getSharedPreferences("aura", 0).edit().putString("appearance", mode).commit();
+            Ui.configure(context);
+            assertEquals(mode.equals("dark"), Ui.dark);
+            assertTrue(androidx.core.graphics.ColorUtils.calculateContrast(Ui.INK, Ui.BG) > 10);
+            assertTrue(androidx.core.graphics.ColorUtils.calculateContrast(Ui.MUTED, Ui.BG) > 4.5);
+            assertTrue(androidx.core.graphics.ColorUtils.calculateContrast(Ui.MINT, Ui.BG) > 4.5);
+            assertTrue(
+                    androidx.core.graphics.ColorUtils.calculateContrast(Ui.onAccent(), Ui.MINT)
+                            > 4.5);
+            MainActivity activity =
+                    (MainActivity)
+                            InstrumentationRegistry.getInstrumentation()
+                                    .startActivitySync(
+                                            new Intent(context, MainActivity.class)
+                                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            try {
+                main(
+                        () -> {
+                            var go = MainActivity.class.getDeclaredMethod("go", String.class);
+                            go.setAccessible(true);
+                            go.invoke(activity, "settings");
+                            assertEquals(mode.equals("dark"), Ui.dark);
+                            return null;
+                        });
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                android.graphics.Bitmap screenshot =
+                        InstrumentationRegistry.getInstrumentation()
+                                .getUiAutomation()
+                                .takeScreenshot();
+                if (screenshot != null)
+                    try (var output =
+                            new java.io.FileOutputStream(
+                                    new java.io.File(
+                                            context.getExternalFilesDir(null),
+                                            "theme-" + mode + ".png"))) {
+                        screenshot.compress(
+                                android.graphics.Bitmap.CompressFormat.PNG, 100, output);
+                    }
+            } finally {
+                main(
+                        () -> {
+                            activity.finish();
+                            return null;
+                        });
+            }
+        }
+    }
+
+    @Test
+    public void songRowsReuseViewsAcrossThousandBinds() throws Exception {
+        MainActivity activity =
+                (MainActivity)
+                        InstrumentationRegistry.getInstrumentation()
+                                .startActivitySync(
+                                        new Intent(context, MainActivity.class)
+                                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        try {
+            main(
+                    () -> {
+                        var factory =
+                                MainActivity.class.getDeclaredMethod(
+                                        "trackRow", Track.class, List.class);
+                        factory.setAccessible(true);
+                        Track first =
+                                new Track(
+                                        "content://row/1",
+                                        "First",
+                                        "Artist",
+                                        "Album",
+                                        "Folder",
+                                        1000,
+                                        "");
+                        View row = (View) factory.invoke(activity, first, List.of(first));
+                        View cover = ((ViewGroup) row).getChildAt(0);
+                        var bind =
+                                row.getClass().getDeclaredMethod("bind", Track.class, List.class);
+                        bind.setAccessible(true);
+                        for (int i = 0; i < 1000; i++) {
+                            Track next =
+                                    new Track(
+                                            "content://row/" + i,
+                                            "Song " + i,
+                                            "Artist",
+                                            "Album",
+                                            "Folder",
+                                            1000,
+                                            "");
+                            bind.invoke(row, next, List.of(next));
+                            assertSame(cover, ((ViewGroup) row).getChildAt(0));
+                        }
+                        assertTrue(
+                                ((TextView)
+                                                ((ViewGroup) ((ViewGroup) row).getChildAt(1))
+                                                        .getChildAt(0))
+                                        .getText()
+                                        .toString()
+                                        .contains("999"));
+                        return null;
+                    });
+        } finally {
+            main(
+                    () -> {
+                        activity.finish();
+                        return null;
+                    });
+        }
+    }
+
+    private double peak(ByteBuffer samples) {
+        double peak = 0;
+        while (samples.hasRemaining()) {
+            float value = samples.getFloat();
+            assertTrue(Float.isFinite(value));
+            peak = Math.max(peak, Math.abs(value));
+        }
+        return peak;
+    }
+
+    private <T> T main(Callable<T> work) throws Exception {
+        FutureTask<T> task = new FutureTask<>(work);
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(task);
+        return task.get(15, TimeUnit.SECONDS);
+    }
 }

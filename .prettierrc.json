@@ -1,0 +1,13 @@
+{
+    "tabWidth": 4,
+    "printWidth": 100,
+    "overrides": [
+        {
+            "files": "*.xml",
+            "options": {
+                "singleAttributePerLine": true,
+                "xmlWhitespaceSensitivity": "preserve"
+            }
+        }
+    ]
+}

@@ -1,26 +1,276 @@
 package dev.aura.player;
 
-import static org.junit.Assert.*;import org.junit.Test;import org.junit.runner.RunWith;
-import androidx.test.ext.junit.runners.AndroidJUnit4;import androidx.test.platform.app.InstrumentationRegistry;import androidx.media3.session.MediaController;import androidx.recyclerview.widget.RecyclerView;
-import android.content.*;import android.graphics.*;import android.net.Uri;import android.os.*;import android.view.*;import android.widget.*;import java.io.*;import java.util.*;import java.util.concurrent.*;
+import static org.junit.Assert.*;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
+import androidx.test.platform.app.InstrumentationRegistry;
+import androidx.media3.session.MediaController;
+import androidx.recyclerview.widget.RecyclerView;
+import android.content.*;
+import android.graphics.*;
+import android.net.Uri;
+import android.os.*;
+import android.view.*;
+import android.widget.*;
+import java.io.*;
+import java.util.*;
+import java.util.concurrent.*;
 
 /** Actual native screens with original geometric covers; fixtures never ship as demo content. */
 @RunWith(AndroidJUnit4.class)
 public class HomeLibraryDesignTest {
-    final android.app.Instrumentation instrumentation=InstrumentationRegistry.getInstrumentation();final Context c=instrumentation.getTargetContext();
-    @Test public void homeAndFourLibraryTabsInBothThemes()throws Exception{
-        AudioSettings.init(c);AudioSettings.put("mode","android");AudioSettings.put("perfect",false);AudioSettings.put("eq",false);File tone=new File(c.getCacheDir(),"home-library-tone.wav");try(var in=instrumentation.getContext().getAssets().open("tone.wav");var out=new FileOutputStream(tone)){out.write(Io.read(in));}
-        String[] names={"Blue Hour","First Light","Soft Landing","Afterglow","Quiet Moments","Sunday Morning"},artists={"AURA Sessions","Moonlit Coast","North Avenue"};List<Track> tracks=new ArrayList<>();for(int i=0;i<48;i++){int album=i%names.length;boolean cloud=i%4==3;String uri=cloud?DriveUris.file("design-test","song"+i,"track.flac").toString():Uri.fromFile(tone).buildUpon().fragment("song"+i).build().toString();Track t=new Track(uri,names[album]+(i>=6?" · "+(i/6+1):""),artists[album%3],names[album],"Music/"+names[album],180000+i*1000,"").withPath(List.of(new FolderTree.Part(cloud?"cloud-root":"local-root",cloud?"Cloud Music":"Music"),new FolderTree.Part("album"+album,names[album])));tracks.add(t);cover(t,album);}ArtworkView.clearCache();
-        for(String mode:List.of("light","dark")){c.getSharedPreferences("aura",0).edit().putString("appearance",mode).putBoolean("onlineLyrics",false).commit();MainActivity a=(MainActivity)instrumentation.startActivitySync(new Intent(c,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));try{await(()->main(()->get(a,"player")!=null&&!(Boolean)get(a,"libraryLoading")),10000);main(()->{set(a,"tracks",tracks);set(a,"source","all");set(a,"query","");set(a,"folderCursor","");MediaController player=(MediaController)get(a,"player");player.stop();player.setMediaItem(tracks.get(0).item());go(a,"home");return null;});idle();capture("home-"+mode);main(()->{assertNotNull(a.getWindow().getDecorView().findViewWithTag("homeContinue"));square(a.getWindow().getDecorView());return null;});
-            for(String tab:List.of("곡","앨범","아티스트","폴더")){main(()->{go(a,"home");View tile=find(a.getWindow().getDecorView(),tab+" 라이브러리 열기");assertNotNull(tile);tile.performClick();assertEquals("library",get(a,"page"));assertEquals(tab,get(a,"tab"));return null;});await(()->main(()->get(a,"activeList")!=null&&((RecyclerView)get(a,"activeList")).isAttachedToWindow()),6000);idle();main(()->{assertTrue(((LibraryHeader)get(a,"libraryChrome")).visibleHeight()<=Ui.dp(c,104));square(a.getWindow().getDecorView());return null;});capture("library-"+Map.of("곡","songs","앨범","albums","아티스트","artists","폴더","folders").get(tab)+"-"+mode);
-                if(tab.equals("앨범"))main(()->{RecyclerView list=(RecyclerView)get(a,"activeList");var adapter=(RecyclerView.Adapter)list.getAdapter();var holder=list.findViewHolderForAdapterPosition(0);assertNotNull(holder);View cell=((ViewGroup)holder.itemView).getChildAt(0),image=((ViewGroup)cell).getChildAt(0);adapter.onBindViewHolder(holder,1);assertSame(cell,((ViewGroup)holder.itemView).getChildAt(0));assertSame(image,((ViewGroup)cell).getChildAt(0));return null;});
+    final android.app.Instrumentation instrumentation =
+            InstrumentationRegistry.getInstrumentation();
+    final Context c = instrumentation.getTargetContext();
+
+    @Test
+    public void homeAndFourLibraryTabsInBothThemes() throws Exception {
+        AudioSettings.init(c);
+        AudioSettings.put("mode", "android");
+        AudioSettings.put("perfect", false);
+        AudioSettings.put("eq", false);
+        File tone = new File(c.getCacheDir(), "home-library-tone.wav");
+        try (var in = instrumentation.getContext().getAssets().open("tone.wav");
+                var out = new FileOutputStream(tone)) {
+            out.write(Io.read(in));
+        }
+        String[]
+                names =
+                        {
+                            "Blue Hour",
+                            "First Light",
+                            "Soft Landing",
+                            "Afterglow",
+                            "Quiet Moments",
+                            "Sunday Morning"
+                        },
+                artists = {"AURA Sessions", "Moonlit Coast", "North Avenue"};
+        List<Track> tracks = new ArrayList<>();
+        for (int i = 0; i < 48; i++) {
+            int album = i % names.length;
+            boolean cloud = i % 4 == 3;
+            String uri =
+                    cloud
+                            ? DriveUris.file("design-test", "song" + i, "track.flac").toString()
+                            : Uri.fromFile(tone)
+                                    .buildUpon()
+                                    .fragment("song" + i)
+                                    .build()
+                                    .toString();
+            Track t =
+                    new Track(
+                                    uri,
+                                    names[album] + (i >= 6 ? " · " + (i / 6 + 1) : ""),
+                                    artists[album % 3],
+                                    names[album],
+                                    "Music/" + names[album],
+                                    180000 + i * 1000,
+                                    "")
+                            .withPath(
+                                    List.of(
+                                            new FolderTree.Part(
+                                                    cloud ? "cloud-root" : "local-root",
+                                                    cloud ? "Cloud Music" : "Music"),
+                                            new FolderTree.Part("album" + album, names[album])));
+            tracks.add(t);
+            cover(t, album);
+        }
+        ArtworkView.clearCache();
+        for (String mode : List.of("light", "dark")) {
+            c.getSharedPreferences("aura", 0)
+                    .edit()
+                    .putString("appearance", mode)
+                    .putBoolean("onlineLyrics", false)
+                    .commit();
+            MainActivity a =
+                    (MainActivity)
+                            instrumentation.startActivitySync(
+                                    new Intent(c, MainActivity.class)
+                                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            try {
+                await(
+                        () ->
+                                main(
+                                        () ->
+                                                get(a, "player") != null
+                                                        && !(Boolean) get(a, "libraryLoading")),
+                        10000);
+                main(
+                        () -> {
+                            set(a, "tracks", tracks);
+                            set(a, "source", "all");
+                            set(a, "query", "");
+                            set(a, "folderCursor", "");
+                            MediaController player = (MediaController) get(a, "player");
+                            player.stop();
+                            player.setMediaItem(tracks.get(0).item());
+                            go(a, "home");
+                            return null;
+                        });
+                idle();
+                capture("home-" + mode);
+                main(
+                        () -> {
+                            assertNotNull(
+                                    a.getWindow().getDecorView().findViewWithTag("homeContinue"));
+                            square(a.getWindow().getDecorView());
+                            return null;
+                        });
+                for (String tab : List.of("곡", "앨범", "아티스트", "폴더")) {
+                    main(
+                            () -> {
+                                go(a, "home");
+                                View tile = find(a.getWindow().getDecorView(), tab + " 라이브러리 열기");
+                                assertNotNull(tile);
+                                tile.performClick();
+                                assertEquals("library", get(a, "page"));
+                                assertEquals(tab, get(a, "tab"));
+                                return null;
+                            });
+                    await(
+                            () ->
+                                    main(
+                                            () ->
+                                                    get(a, "activeList") != null
+                                                            && ((RecyclerView) get(a, "activeList"))
+                                                                    .isAttachedToWindow()),
+                            6000);
+                    idle();
+                    main(
+                            () -> {
+                                assertTrue(
+                                        ((LibraryHeader) get(a, "libraryChrome")).visibleHeight()
+                                                <= Ui.dp(c, 104));
+                                square(a.getWindow().getDecorView());
+                                return null;
+                            });
+                    capture(
+                            "library-"
+                                    + Map.of(
+                                                    "곡", "songs", "앨범", "albums", "아티스트", "artists",
+                                                    "폴더", "folders")
+                                            .get(tab)
+                                    + "-"
+                                    + mode);
+                    if (tab.equals("앨범"))
+                        main(
+                                () -> {
+                                    RecyclerView list = (RecyclerView) get(a, "activeList");
+                                    var adapter = (RecyclerView.Adapter) list.getAdapter();
+                                    var holder = list.findViewHolderForAdapterPosition(0);
+                                    assertNotNull(holder);
+                                    View cell = ((ViewGroup) holder.itemView).getChildAt(0),
+                                            image = ((ViewGroup) cell).getChildAt(0);
+                                    adapter.onBindViewHolder(holder, 1);
+                                    assertSame(cell, ((ViewGroup) holder.itemView).getChildAt(0));
+                                    assertSame(image, ((ViewGroup) cell).getChildAt(0));
+                                    return null;
+                                });
+                }
+            } finally {
+                main(
+                        () -> {
+                            MediaController player = (MediaController) get(a, "player");
+                            if (player != null) {
+                                player.stop();
+                                player.clearMediaItems();
+                            }
+                            a.finish();
+                            return null;
+                        });
             }
-        }finally{main(()->{MediaController player=(MediaController)get(a,"player");if(player!=null){player.stop();player.clearMediaItems();}a.finish();return null;});}}
+        }
     }
-    private void cover(Track track,int index)throws Exception{int[] colors={0xff24475b,0xff7c6d9b,0xff547566,0xffb87961,0xff516783,0xff8f7569};Bitmap b=Bitmap.createBitmap(360,360,Bitmap.Config.ARGB_8888);Canvas canvas=new Canvas(b);Paint p=new Paint(3);p.setColor(colors[index]);canvas.drawRect(0,0,360,360,p);p.setColor(0xfff6d8b0);canvas.drawCircle(240,120,52,p);p.setColor(0x6630384a);Path wave=new Path();wave.moveTo(0,220);wave.cubicTo(100,160,220,280,360,200);wave.lineTo(360,360);wave.lineTo(0,360);wave.close();canvas.drawPath(wave,p);p.setColor(0xfff3f4fa);p.setTextSize(25);p.setTypeface(Typeface.create("sans-serif-light",0));canvas.drawText(track.album.toUpperCase(Locale.ROOT),22,325,p);File f=Library.artFile(c,track.uri);f.getParentFile().mkdirs();try(var out=new FileOutputStream(f)){b.compress(Bitmap.CompressFormat.JPEG,90,out);}b.recycle();}
-    private View find(View v,String desc){if(desc.contentEquals(v.getContentDescription()==null?"":v.getContentDescription()))return v;if(v instanceof ViewGroup g)for(int i=0;i<g.getChildCount();i++){View found=find(g.getChildAt(i),desc);if(found!=null)return found;}return null;}
-    private void square(View v){if(v instanceof ArtworkView&&v.getWidth()>0)assertEquals(v.getWidth(),v.getHeight());if(v instanceof ViewGroup g)for(int i=0;i<g.getChildCount();i++)square(g.getChildAt(i));}
-    private void capture(String name)throws Exception{Bitmap b=instrumentation.getUiAutomation().takeScreenshot();assertNotNull(b);try(var out=new FileOutputStream(new File(c.getExternalFilesDir(null),"polished-"+name+".png"))){b.compress(Bitmap.CompressFormat.PNG,100,out);}}
-    private void idle()throws Exception{instrumentation.waitForIdleSync();Thread.sleep(500);}private void await(Callable<Boolean> check,long ms)throws Exception{long until=SystemClock.elapsedRealtime()+ms;while(!check.call()&&SystemClock.elapsedRealtime()<until)Thread.sleep(40);assertTrue(check.call());}
-    private Object get(Object target,String key)throws Exception{var f=target.getClass().getDeclaredField(key);f.setAccessible(true);return f.get(target);}private void set(Object target,String key,Object value)throws Exception{var f=target.getClass().getDeclaredField(key);f.setAccessible(true);f.set(target,value);}private void go(MainActivity a,String page)throws Exception{var m=MainActivity.class.getDeclaredMethod("go",String.class);m.setAccessible(true);m.invoke(a,page);}private <T>T main(Callable<T> task)throws Exception{FutureTask<T> f=new FutureTask<>(task);instrumentation.runOnMainSync(f);return f.get(20,TimeUnit.SECONDS);}
+
+    private void cover(Track track, int index) throws Exception {
+        int[] colors = {0xff24475b, 0xff7c6d9b, 0xff547566, 0xffb87961, 0xff516783, 0xff8f7569};
+        Bitmap b = Bitmap.createBitmap(360, 360, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(b);
+        Paint p = new Paint(3);
+        p.setColor(colors[index]);
+        canvas.drawRect(0, 0, 360, 360, p);
+        p.setColor(0xfff6d8b0);
+        canvas.drawCircle(240, 120, 52, p);
+        p.setColor(0x6630384a);
+        Path wave = new Path();
+        wave.moveTo(0, 220);
+        wave.cubicTo(100, 160, 220, 280, 360, 200);
+        wave.lineTo(360, 360);
+        wave.lineTo(0, 360);
+        wave.close();
+        canvas.drawPath(wave, p);
+        p.setColor(0xfff3f4fa);
+        p.setTextSize(25);
+        p.setTypeface(Typeface.create("sans-serif-light", 0));
+        canvas.drawText(track.album.toUpperCase(Locale.ROOT), 22, 325, p);
+        File f = Library.artFile(c, track.uri);
+        f.getParentFile().mkdirs();
+        try (var out = new FileOutputStream(f)) {
+            b.compress(Bitmap.CompressFormat.JPEG, 90, out);
+        }
+        b.recycle();
+    }
+
+    private View find(View v, String desc) {
+        if (desc.contentEquals(v.getContentDescription() == null ? "" : v.getContentDescription()))
+            return v;
+        if (v instanceof ViewGroup g)
+            for (int i = 0; i < g.getChildCount(); i++) {
+                View found = find(g.getChildAt(i), desc);
+                if (found != null) return found;
+            }
+        return null;
+    }
+
+    private void square(View v) {
+        if (v instanceof ArtworkView && v.getWidth() > 0) assertEquals(v.getWidth(), v.getHeight());
+        if (v instanceof ViewGroup g)
+            for (int i = 0; i < g.getChildCount(); i++) square(g.getChildAt(i));
+    }
+
+    private void capture(String name) throws Exception {
+        Bitmap b = instrumentation.getUiAutomation().takeScreenshot();
+        assertNotNull(b);
+        try (var out =
+                new FileOutputStream(
+                        new File(c.getExternalFilesDir(null), "polished-" + name + ".png"))) {
+            b.compress(Bitmap.CompressFormat.PNG, 100, out);
+        }
+    }
+
+    private void idle() throws Exception {
+        instrumentation.waitForIdleSync();
+        Thread.sleep(500);
+    }
+
+    private void await(Callable<Boolean> check, long ms) throws Exception {
+        long until = SystemClock.elapsedRealtime() + ms;
+        while (!check.call() && SystemClock.elapsedRealtime() < until) Thread.sleep(40);
+        assertTrue(check.call());
+    }
+
+    private Object get(Object target, String key) throws Exception {
+        var f = target.getClass().getDeclaredField(key);
+        f.setAccessible(true);
+        return f.get(target);
+    }
+
+    private void set(Object target, String key, Object value) throws Exception {
+        var f = target.getClass().getDeclaredField(key);
+        f.setAccessible(true);
+        f.set(target, value);
+    }
+
+    private void go(MainActivity a, String page) throws Exception {
+        var m = MainActivity.class.getDeclaredMethod("go", String.class);
+        m.setAccessible(true);
+        m.invoke(a, page);
+    }
+
+    private <T> T main(Callable<T> task) throws Exception {
+        FutureTask<T> f = new FutureTask<>(task);
+        instrumentation.runOnMainSync(f);
+        return f.get(20, TimeUnit.SECONDS);
+    }
 }

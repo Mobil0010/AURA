@@ -1,17 +1,365 @@
 package dev.aura.player;
-import static org.junit.Assert.*;import org.junit.*;import org.junit.runner.RunWith;import androidx.test.ext.junit.runners.AndroidJUnit4;import androidx.test.platform.app.InstrumentationRegistry;import androidx.media3.session.MediaController;
-import android.content.*;import android.graphics.*;import android.net.Uri;import android.os.*;import android.view.*;import android.widget.*;import java.io.*;import java.util.*;import java.util.concurrent.*;import org.json.*;
+
+import static org.junit.Assert.*;
+import org.junit.*;
+import org.junit.runner.RunWith;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
+import androidx.test.platform.app.InstrumentationRegistry;
+import androidx.media3.session.MediaController;
+import android.content.*;
+import android.graphics.*;
+import android.net.Uri;
+import android.os.*;
+import android.view.*;
+import android.widget.*;
+import java.io.*;
+import java.util.*;
+import java.util.concurrent.*;
+import org.json.*;
 
 @RunWith(AndroidJUnit4.class)
-@androidx.annotation.OptIn(markerClass=androidx.media3.common.util.UnstableApi.class)
+@androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
 public class PlaylistLyricsTest {
-    final android.app.Instrumentation instrumentation=InstrumentationRegistry.getInstrumentation();final Context c=instrumentation.getTargetContext();MainActivity activity;List<Track> songs;String savedPlaylists;boolean savedOnline,savedScan;
-    @Before public void setup()throws Exception{var prefs=c.getSharedPreferences("aura",0);savedPlaylists=prefs.getString("playlists","{}");savedOnline=prefs.getBoolean("onlineLyrics",false);savedScan=prefs.getBoolean("scanOnLaunch",false);prefs.edit().putBoolean("onlineLyrics",false).putBoolean("scanOnLaunch",false).commit();AudioSettings.init(c);AudioSettings.put("mode","android");AudioSettings.put("perfect",false);AudioSettings.put("eq",false);File tone=new File(c.getCacheDir(),"playlist-lyrics.wav"),lrc=new File(c.getCacheDir(),"playlist-lyrics.lrc");try(var in=instrumentation.getContext().getAssets().open("tone.wav");var out=new FileOutputStream(tone)){out.write(Io.read(in));}java.nio.file.Files.write(lrc.toPath(),("[00:00.00]<00:00.00>Slow <00:00.80>down <00:01.40>and <00:02.00>stay\n[00:03.00]Under the quiet sky\n[00:05.00]Let the music carry you\n[00:07.00]Into the morning light\n[00:09.00]Far beyond the city\n[00:11.00]Another quiet moment\n[00:13.00]A new beginning\n[00:15.00]Warm lights in the distance\n[00:17.00]The end of the song").getBytes(java.nio.charset.StandardCharsets.UTF_8));songs=List.of(new Track(Uri.fromFile(tone).toString(),"Blue Hour","AURA Sessions","Quiet Tides","Music",19000,Uri.fromFile(lrc).toString()),new Track(Uri.fromFile(tone).buildUpon().fragment("two").build().toString(),"Afterglow","AURA Sessions","Quiet Tides","Music",19000,Uri.fromFile(lrc).toString()));}
-    @After public void cleanup()throws Exception{if(activity!=null)main(()->{var p=player();if(p!=null){p.stop();p.clearMediaItems();}activity.finish();return null;});c.getSharedPreferences("aura",0).edit().putString("playlists",savedPlaylists).putBoolean("onlineLyrics",savedOnline).putBoolean("scanOnLaunch",savedScan).putBoolean("karaoke",true).putString("appearance","dark").commit();}
-    private void launch()throws Exception{activity=(MainActivity)instrumentation.startActivitySync(new Intent(c,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));await(()->main(()->get("player")!=null&&!(Boolean)get("libraryLoading")),10000);main(()->{set("tracks",new ArrayList<>(songs));player().stop();player().setMediaItems(songs.stream().map(Track::item).collect(java.util.stream.Collectors.toList()));player().prepare();return null;});}
-    @Test public void wordToggleAndSeekKeepTimedHighlightAccurate()throws Exception{launch();go("lyrics");await(()->main(()->((List<?>)get("lyricViews")).size()==9),5000);main(()->{player().pause();player().seekTo(1100);var update=MainActivity.class.getDeclaredMethod("updateLyrics",long.class);update.setAccessible(true);update.invoke(activity,1100L);var views=(List<TextView>)get("lyricViews");KaraokeLineView first=(KaraokeLineView)views.get(0);var progress=KaraokeLineView.class.getDeclaredField("progress");progress.setAccessible(true);assertTrue(((KaraokeTiming.Progress)progress.get(first)).complete()>=5);var toggle=(androidx.appcompat.widget.SwitchCompat)activity.getWindow().getDecorView().findViewWithTag("karaokeToggle");assertTrue(toggle.isChecked());int offset=((View)get("scroll")).getScrollY();toggle.performClick();assertFalse(c.getSharedPreferences("aura",0).getBoolean("karaoke",true));assertEquals(offset,((View)get("scroll")).getScrollY());var enabled=KaraokeLineView.class.getDeclaredField("enabled");enabled.setAccessible(true);assertFalse(enabled.getBoolean(first));toggle.performClick();assertTrue(enabled.getBoolean(first));update.invoke(activity,100L);assertEquals(0,((KaraokeTiming.Progress)progress.get(first)).complete());update.invoke(activity,3500L);assertTrue(((TextView)get("lyricsTimingLabel")).getText().toString().contains("추정"));return null;});}
-    @Test public void scrollRevealsChromeThenFadesWithoutMovingLyrics()throws Exception{launch();go("lyrics");await(()->main(()->((List<?>)get("lyricViews")).size()==9),5000);Thread.sleep(3550);assertEquals(View.GONE,main(()->((View)get("lyricsChrome")).getVisibility()).intValue());int y=main(()->((View)get("scroll")).getScrollY());main(()->{PlayerScrollView scroll=(PlayerScrollView)get("scroll");long now=SystemClock.uptimeMillis();MotionEvent down=MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,Ui.dp(c,60),Ui.dp(c,170),0);scroll.dispatchTouchEvent(down);down.recycle();MotionEvent move=MotionEvent.obtain(now,now+30,MotionEvent.ACTION_MOVE,Ui.dp(c,60),Ui.dp(c,100),0);scroll.dispatchTouchEvent(move);move.recycle();MotionEvent up=MotionEvent.obtain(now,now+50,MotionEvent.ACTION_UP,Ui.dp(c,60),Ui.dp(c,100),0);scroll.dispatchTouchEvent(up);up.recycle();return null;});Thread.sleep(300);assertEquals(View.VISIBLE,main(()->((View)get("lyricsChrome")).getVisibility()).intValue());Thread.sleep(2350);assertTrue(main(()->((View)get("lyricsBottom")).getAlpha())>.95);Thread.sleep(850);assertEquals(View.GONE,main(()->((View)get("lyricsChrome")).getVisibility()).intValue());main(()->{var show=MainActivity.class.getDeclaredMethod("showLyricsChrome");show.setAccessible(true);show.invoke(activity);return null;});Thread.sleep(300);assertEquals(View.VISIBLE,main(()->((View)get("lyricsChrome")).getVisibility()).intValue());go("player");Thread.sleep(3400);assertEquals("player",main(()->get("page")));assertEquals(View.GONE,main(()->((View)get("lyricsChrome")).getVisibility()).intValue());}
-    @Test public void playlistCardsKeepNavigationAndStoredSongs()throws Exception{c.getSharedPreferences("aura",0).edit().putString("playlists",new JSONObject().put("Quiet evenings",new JSONArray().put(songs.get(0).uri).put(songs.get(1).uri)).put("Empty mix",new JSONArray()).toString()).commit();launch();go("playlists");idle();main(()->{var list=(androidx.recyclerview.widget.RecyclerView)get("activeList");assertEquals(2,list.getAdapter().getItemCount());ViewGroup cell=(ViewGroup)((ViewGroup)list.findViewHolderForAdapterPosition(1).itemView).getChildAt(0);assertTrue(cell.getChildAt(cell.getChildCount()-1).hasOnClickListeners());assertEquals("playlists",get("page"));cell.performClick();assertEquals("group",get("page"));activity.getOnBackPressedDispatcher().onBackPressed();assertEquals("playlists",get("page"));return null;});assertEquals(2,new JSONObject(c.getSharedPreferences("aura",0).getString("playlists","{}")).getJSONArray("Quiet evenings").length());}
-    @Test public void nativeScreensInBothThemes()throws Exception{c.getSharedPreferences("aura",0).edit().putString("playlists",new JSONObject().put("Quiet evenings",new JSONArray().put(songs.get(0).uri)).put("Sunday morning",new JSONArray().put(songs.get(1).uri)).put("New discoveries",new JSONArray()).toString()).commit();for(String mode:List.of("light","dark")){c.getSharedPreferences("aura",0).edit().putString("appearance",mode).commit();launch();go("playlists");idle();capture("playlists-"+mode);go("lyrics");await(()->main(()->((List<?>)get("lyricViews")).size()==9),5000);main(()->{player().pause();player().seekTo(1100);var update=MainActivity.class.getDeclaredMethod("updateLyrics",long.class);update.setAccessible(true);update.invoke(activity,1100L);return null;});idle();capture("lyrics-controls-"+mode);Thread.sleep(3200);capture("lyrics-clean-"+mode);main(()->{player().stop();player().clearMediaItems();activity.finish();return null;});activity=null;}}
-    private void go(String page)throws Exception{main(()->{var method=MainActivity.class.getDeclaredMethod("go",String.class);method.setAccessible(true);method.invoke(activity,page);return null;});}private MediaController player()throws Exception{return (MediaController)get("player");}private Object get(String key)throws Exception{var f=MainActivity.class.getDeclaredField(key);f.setAccessible(true);return f.get(activity);}private void set(String key,Object value)throws Exception{var f=MainActivity.class.getDeclaredField(key);f.setAccessible(true);f.set(activity,value);}private <T>T main(Callable<T> action)throws Exception{FutureTask<T> result=new FutureTask<>(action);instrumentation.runOnMainSync(result);return result.get(20,TimeUnit.SECONDS);}private void idle()throws Exception{instrumentation.waitForIdleSync();Thread.sleep(500);}private void await(Callable<Boolean> check,long timeout)throws Exception{long end=SystemClock.elapsedRealtime()+timeout;while(!check.call()&&SystemClock.elapsedRealtime()<end)Thread.sleep(40);assertTrue(check.call());}private void capture(String name)throws Exception{Bitmap image=instrumentation.getUiAutomation().takeScreenshot();assertNotNull(image);try(var out=new FileOutputStream(new File(c.getExternalFilesDir(null),"refined-"+name+".png"))){image.compress(Bitmap.CompressFormat.PNG,100,out);}}
+    final android.app.Instrumentation instrumentation =
+            InstrumentationRegistry.getInstrumentation();
+    final Context c = instrumentation.getTargetContext();
+    MainActivity activity;
+    List<Track> songs;
+    String savedPlaylists;
+    boolean savedOnline, savedScan;
+
+    @Before
+    public void setup() throws Exception {
+        var prefs = c.getSharedPreferences("aura", 0);
+        savedPlaylists = prefs.getString("playlists", "{}");
+        savedOnline = prefs.getBoolean("onlineLyrics", false);
+        savedScan = prefs.getBoolean("scanOnLaunch", false);
+        prefs.edit().putBoolean("onlineLyrics", false).putBoolean("scanOnLaunch", false).commit();
+        AudioSettings.init(c);
+        AudioSettings.put("mode", "android");
+        AudioSettings.put("perfect", false);
+        AudioSettings.put("eq", false);
+        File tone = new File(c.getCacheDir(), "playlist-lyrics.wav"),
+                lrc = new File(c.getCacheDir(), "playlist-lyrics.lrc");
+        try (var in = instrumentation.getContext().getAssets().open("tone.wav");
+                var out = new FileOutputStream(tone)) {
+            out.write(Io.read(in));
+        }
+        java.nio.file.Files.write(
+                lrc.toPath(),
+                ("[00:00.00]<00:00.00>Slow <00:00.80>down <00:01.40>and <00:02.00>stay\n[00:03.00]Under the quiet sky\n[00:05.00]Let the music carry you\n[00:07.00]Into the morning light\n[00:09.00]Far beyond the city\n[00:11.00]Another quiet moment\n[00:13.00]A new beginning\n[00:15.00]Warm lights in the distance\n[00:17.00]The end of the song")
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        songs =
+                List.of(
+                        new Track(
+                                Uri.fromFile(tone).toString(),
+                                "Blue Hour",
+                                "AURA Sessions",
+                                "Quiet Tides",
+                                "Music",
+                                19000,
+                                Uri.fromFile(lrc).toString()),
+                        new Track(
+                                Uri.fromFile(tone).buildUpon().fragment("two").build().toString(),
+                                "Afterglow",
+                                "AURA Sessions",
+                                "Quiet Tides",
+                                "Music",
+                                19000,
+                                Uri.fromFile(lrc).toString()));
+    }
+
+    @After
+    public void cleanup() throws Exception {
+        if (activity != null)
+            main(
+                    () -> {
+                        var p = player();
+                        if (p != null) {
+                            p.stop();
+                            p.clearMediaItems();
+                        }
+                        activity.finish();
+                        return null;
+                    });
+        c.getSharedPreferences("aura", 0)
+                .edit()
+                .putString("playlists", savedPlaylists)
+                .putBoolean("onlineLyrics", savedOnline)
+                .putBoolean("scanOnLaunch", savedScan)
+                .putBoolean("karaoke", true)
+                .putString("appearance", "dark")
+                .commit();
+    }
+
+    private void launch() throws Exception {
+        activity =
+                (MainActivity)
+                        instrumentation.startActivitySync(
+                                new Intent(c, MainActivity.class)
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        await(() -> main(() -> get("player") != null && !(Boolean) get("libraryLoading")), 10000);
+        main(
+                () -> {
+                    set("tracks", new ArrayList<>(songs));
+                    player().stop();
+                    player().setMediaItems(
+                                    songs.stream()
+                                            .map(Track::item)
+                                            .collect(java.util.stream.Collectors.toList()));
+                    player().prepare();
+                    return null;
+                });
+    }
+
+    @Test
+    public void wordToggleAndSeekKeepTimedHighlightAccurate() throws Exception {
+        launch();
+        go("lyrics");
+        await(() -> main(() -> ((List<?>) get("lyricViews")).size() == 9), 5000);
+        main(
+                () -> {
+                    player().pause();
+                    player().seekTo(1100);
+                    var update = MainActivity.class.getDeclaredMethod("updateLyrics", long.class);
+                    update.setAccessible(true);
+                    update.invoke(activity, 1100L);
+                    var views = (List<TextView>) get("lyricViews");
+                    KaraokeLineView first = (KaraokeLineView) views.get(0);
+                    var progress = KaraokeLineView.class.getDeclaredField("progress");
+                    progress.setAccessible(true);
+                    assertTrue(((KaraokeTiming.Progress) progress.get(first)).complete() >= 5);
+                    var toggle =
+                            (androidx.appcompat.widget.SwitchCompat)
+                                    activity.getWindow()
+                                            .getDecorView()
+                                            .findViewWithTag("karaokeToggle");
+                    assertTrue(toggle.isChecked());
+                    int offset = ((View) get("scroll")).getScrollY();
+                    toggle.performClick();
+                    assertFalse(c.getSharedPreferences("aura", 0).getBoolean("karaoke", true));
+                    assertEquals(offset, ((View) get("scroll")).getScrollY());
+                    var enabled = KaraokeLineView.class.getDeclaredField("enabled");
+                    enabled.setAccessible(true);
+                    assertFalse(enabled.getBoolean(first));
+                    toggle.performClick();
+                    assertTrue(enabled.getBoolean(first));
+                    update.invoke(activity, 100L);
+                    assertEquals(0, ((KaraokeTiming.Progress) progress.get(first)).complete());
+                    update.invoke(activity, 3500L);
+                    assertTrue(
+                            ((TextView) get("lyricsTimingLabel"))
+                                    .getText()
+                                    .toString()
+                                    .contains("추정"));
+                    return null;
+                });
+    }
+
+    @Test
+    public void scrollRevealsChromeThenFadesWithoutMovingLyrics() throws Exception {
+        launch();
+        go("lyrics");
+        await(() -> main(() -> ((List<?>) get("lyricViews")).size() == 9), 5000);
+        Thread.sleep(3550);
+        assertEquals(
+                View.GONE, main(() -> ((View) get("lyricsChrome")).getVisibility()).intValue());
+        int y = main(() -> ((View) get("scroll")).getScrollY());
+        main(
+                () -> {
+                    PlayerScrollView scroll = (PlayerScrollView) get("scroll");
+                    long now = SystemClock.uptimeMillis();
+                    MotionEvent down =
+                            MotionEvent.obtain(
+                                    now,
+                                    now,
+                                    MotionEvent.ACTION_DOWN,
+                                    Ui.dp(c, 60),
+                                    Ui.dp(c, 170),
+                                    0);
+                    scroll.dispatchTouchEvent(down);
+                    down.recycle();
+                    MotionEvent move =
+                            MotionEvent.obtain(
+                                    now,
+                                    now + 30,
+                                    MotionEvent.ACTION_MOVE,
+                                    Ui.dp(c, 60),
+                                    Ui.dp(c, 100),
+                                    0);
+                    scroll.dispatchTouchEvent(move);
+                    move.recycle();
+                    MotionEvent up =
+                            MotionEvent.obtain(
+                                    now,
+                                    now + 50,
+                                    MotionEvent.ACTION_UP,
+                                    Ui.dp(c, 60),
+                                    Ui.dp(c, 100),
+                                    0);
+                    scroll.dispatchTouchEvent(up);
+                    up.recycle();
+                    return null;
+                });
+        Thread.sleep(300);
+        assertEquals(
+                View.VISIBLE, main(() -> ((View) get("lyricsChrome")).getVisibility()).intValue());
+        Thread.sleep(2350);
+        assertTrue(main(() -> ((View) get("lyricsBottom")).getAlpha()) > .95);
+        Thread.sleep(850);
+        assertEquals(
+                View.GONE, main(() -> ((View) get("lyricsChrome")).getVisibility()).intValue());
+        main(
+                () -> {
+                    var show = MainActivity.class.getDeclaredMethod("showLyricsChrome");
+                    show.setAccessible(true);
+                    show.invoke(activity);
+                    return null;
+                });
+        Thread.sleep(300);
+        assertEquals(
+                View.VISIBLE, main(() -> ((View) get("lyricsChrome")).getVisibility()).intValue());
+        go("player");
+        Thread.sleep(3400);
+        assertEquals("player", main(() -> get("page")));
+        assertEquals(
+                View.GONE, main(() -> ((View) get("lyricsChrome")).getVisibility()).intValue());
+    }
+
+    @Test
+    public void playlistCardsKeepNavigationAndStoredSongs() throws Exception {
+        c.getSharedPreferences("aura", 0)
+                .edit()
+                .putString(
+                        "playlists",
+                        new JSONObject()
+                                .put(
+                                        "Quiet evenings",
+                                        new JSONArray().put(songs.get(0).uri).put(songs.get(1).uri))
+                                .put("Empty mix", new JSONArray())
+                                .toString())
+                .commit();
+        launch();
+        go("playlists");
+        idle();
+        main(
+                () -> {
+                    var list = (androidx.recyclerview.widget.RecyclerView) get("activeList");
+                    assertEquals(2, list.getAdapter().getItemCount());
+                    ViewGroup cell =
+                            (ViewGroup)
+                                    ((ViewGroup) list.findViewHolderForAdapterPosition(1).itemView)
+                                            .getChildAt(0);
+                    assertTrue(cell.getChildAt(cell.getChildCount() - 1).hasOnClickListeners());
+                    assertEquals("playlists", get("page"));
+                    cell.performClick();
+                    assertEquals("group", get("page"));
+                    activity.getOnBackPressedDispatcher().onBackPressed();
+                    assertEquals("playlists", get("page"));
+                    return null;
+                });
+        assertEquals(
+                2,
+                new JSONObject(c.getSharedPreferences("aura", 0).getString("playlists", "{}"))
+                        .getJSONArray("Quiet evenings")
+                        .length());
+    }
+
+    @Test
+    public void nativeScreensInBothThemes() throws Exception {
+        c.getSharedPreferences("aura", 0)
+                .edit()
+                .putString(
+                        "playlists",
+                        new JSONObject()
+                                .put("Quiet evenings", new JSONArray().put(songs.get(0).uri))
+                                .put("Sunday morning", new JSONArray().put(songs.get(1).uri))
+                                .put("New discoveries", new JSONArray())
+                                .toString())
+                .commit();
+        for (String mode : List.of("light", "dark")) {
+            c.getSharedPreferences("aura", 0).edit().putString("appearance", mode).commit();
+            launch();
+            go("playlists");
+            idle();
+            capture("playlists-" + mode);
+            go("lyrics");
+            await(() -> main(() -> ((List<?>) get("lyricViews")).size() == 9), 5000);
+            main(
+                    () -> {
+                        player().pause();
+                        player().seekTo(1100);
+                        var update =
+                                MainActivity.class.getDeclaredMethod("updateLyrics", long.class);
+                        update.setAccessible(true);
+                        update.invoke(activity, 1100L);
+                        return null;
+                    });
+            idle();
+            capture("lyrics-controls-" + mode);
+            Thread.sleep(3200);
+            capture("lyrics-clean-" + mode);
+            main(
+                    () -> {
+                        player().stop();
+                        player().clearMediaItems();
+                        activity.finish();
+                        return null;
+                    });
+            activity = null;
+        }
+    }
+
+    private void go(String page) throws Exception {
+        main(
+                () -> {
+                    var method = MainActivity.class.getDeclaredMethod("go", String.class);
+                    method.setAccessible(true);
+                    method.invoke(activity, page);
+                    return null;
+                });
+    }
+
+    private MediaController player() throws Exception {
+        return (MediaController) get("player");
+    }
+
+    private Object get(String key) throws Exception {
+        var f = MainActivity.class.getDeclaredField(key);
+        f.setAccessible(true);
+        return f.get(activity);
+    }
+
+    private void set(String key, Object value) throws Exception {
+        var f = MainActivity.class.getDeclaredField(key);
+        f.setAccessible(true);
+        f.set(activity, value);
+    }
+
+    private <T> T main(Callable<T> action) throws Exception {
+        FutureTask<T> result = new FutureTask<>(action);
+        instrumentation.runOnMainSync(result);
+        return result.get(20, TimeUnit.SECONDS);
+    }
+
+    private void idle() throws Exception {
+        instrumentation.waitForIdleSync();
+        Thread.sleep(500);
+    }
+
+    private void await(Callable<Boolean> check, long timeout) throws Exception {
+        long end = SystemClock.elapsedRealtime() + timeout;
+        while (!check.call() && SystemClock.elapsedRealtime() < end) Thread.sleep(40);
+        assertTrue(check.call());
+    }
+
+    private void capture(String name) throws Exception {
+        Bitmap image = instrumentation.getUiAutomation().takeScreenshot();
+        assertNotNull(image);
+        try (var out =
+                new FileOutputStream(
+                        new File(c.getExternalFilesDir(null), "refined-" + name + ".png"))) {
+            image.compress(Bitmap.CompressFormat.PNG, 100, out);
+        }
+    }
 }

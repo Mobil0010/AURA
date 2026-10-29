@@ -1,21 +1,223 @@
 package dev.aura.player;
+
 import java.nio.*;
 import java.util.*;
 
-@androidx.annotation.OptIn(markerClass=androidx.media3.common.util.UnstableApi.class)
+@androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
 public final class PcmDsp implements AutoCloseable {
-    private final DynamicBass bass;private final AudioSettings.Extra fixedExtra;
-    private double[] scratch=new double[0];private double[][] coefficients;private java.util.List<AudioSettings.Band> coefficientBands;private double[] channelSamples;
-    private ByteBuffer output=ByteBuffer.allocateDirect(0);
-    private final boolean outputFloat;private final AudioSettings.Config fixed;
-    private final int inputRate,outputRate,channels,inputBits,outputBits;
-    private final Biquad[] filters;private long sox;private double autoGain=1,gain=1,wet=0,mixValue=0,balanceValue=0;private final Random random=new Random();private final double[] error;
-    public PcmDsp(int rate,int out,int ch,int inBits,int bits,AudioSettings.Config c){this(rate,out,ch,inBits,bits,c,false);}
-    public PcmDsp(int rate,int out,int ch,int inBits,int bits,AudioSettings.Config c,boolean freeze){this(rate,out,ch,inBits,bits,c,freeze,false);}
-    PcmDsp(int rate,int out,int ch,int inBits,int bits,AudioSettings.Config c,boolean freeze,boolean outputFloat){if(outputFloat&&bits!=32)throw new IllegalArgumentException("Float 출력은 32비트여야 합니다.");this.outputFloat=outputFloat;bass=new DynamicBass(ch);fixedExtra=freeze?new AudioSettings.Extra("off",AudioSettings.extra.bass(),AudioSettings.extra.bassFrequency(),AudioSettings.extra.volumeCeiling()):null;AudioSettings.Extra initial=freeze?fixedExtra:AudioSettings.extra;gain=Math.pow(10,(c.preamp()+(initial.replayGain().equals("off")?0:ReplayGain.gainDb))/20)*(initial.volumeCeiling()/100.)*(c.mode().equals("usb")?UsbVolume.softwareGain:1);autoGain=Math.pow(10,EqHeadroom.compensationDb(c,out)/20);fixed=freeze?c:null;inputRate=rate;outputRate=out;channels=ch;inputBits=inBits;outputBits=bits;filters=new Biquad[c.bands().size()];for(int i=0;i<filters.length;i++)filters[i]=new Biquad(ch);error=new double[ch];if(rate!=out)sox=NativeAudio.createSox64(rate,out,ch,c.quality(),c.phase(),c.cutoff());}
-    public ByteBuffer process(ByteBuffer input,int encoding){int bytes=encoding==4?4:encoding==3?1:inputBits/8;int count=input.remaining()/bytes;if(scratch.length<count)scratch=new double[count];double[] samples=scratch;double inputScale=Math.scalb(1.,bytes*8-1);ByteBuffer in=input.duplicate().order(ByteOrder.LITTLE_ENDIAN);for(int i=0;i<count;i++){samples[i]=switch(encoding){case 4->in.getFloat();case 3->((in.get()&255)-128)/128f;default->{boolean big=encoding==268435456||encoding==1342177280||encoding==1610612736;int v=0;for(int j=0;j<bytes;j++)v|=(in.get()&255)<<((big?bytes-1-j:j)*8);if(bytes<4)v=(v<<(32-bytes*8))>>(32-bytes*8);yield v/inputScale;}};}return finish(samples,count);}
-    private ByteBuffer finish(double[] samples,int count){if(sox!=0){samples=NativeAudio.resample64(sox,samples.length==count?samples:java.util.Arrays.copyOf(samples,count));count=samples==null?0:samples.length;}if(samples==null)samples=new double[0];AudioSettings.Config c=fixed==null?AudioSettings.current:fixed;if(coefficientBands!=c.bands()){coefficients=new double[filters.length][];for(int i=0;i<filters.length;i++)coefficients[i]=Biquad.coefficients(c.bands().get(i),outputRate);coefficientBands=c.bands();}double[][] co=coefficients;double automatic=Math.pow(10,EqHeadroom.compensationDb(c,outputRate)/20);if(automatic<autoGain)autoGain=automatic;AudioSettings.Extra extra=fixedExtra==null?AudioSettings.extra:fixedExtra;bass.configure(extra.bass(),extra.bassFrequency(),outputRate);double target=Math.pow(10,(c.preamp()+(extra.replayGain().equals("off")?0:ReplayGain.gainDb))/20)*(extra.volumeCeiling()/100.)*(c.mode().equals("usb")?UsbVolume.softwareGain:1),mix=c.crossfeed()/100.;if(target<gain)gain=target;if(channelSamples==null)channelSamples=new double[channels];double[] last=channelSamples;double scale=Math.scalb(1.,outputBits-1);
-        int needed=count*(outputBits/8);if(output.capacity()<needed)output=ByteBuffer.allocateDirect(needed).order(ByteOrder.LITTLE_ENDIAN);ByteBuffer out=output;out.clear();for(int frame=0;frame<count/channels;frame++){gain+=(target-gain)*.002;autoGain+=(automatic-autoGain)*.0005;wet+=((c.eq()?1.:0.)-wet)*.002;mixValue+=(mix-mixValue)*.002;balanceValue+=(c.balance()/100.-balanceValue)*.002;for(int ch=0;ch<channels;ch++){double v=samples[frame*channels+ch];double raw=v;if(c.eq()||wet>.00001)for(int band=0;band<filters.length;band++)v=filters[band].sample(v,ch,co[band]);last[ch]=(raw+(v-raw)*wet)*gain*autoGain;}if(extra.bass()>0||bass.active())bass.frame(last,channels);if(channels==2&&mixValue>0){double l=last[0],r=last[1];last[0]=(l+mixValue*r)/(1+mixValue);last[1]=(r+mixValue*l)/(1+mixValue);}for(int ch=0;ch<channels;ch++){double v=last[ch];if(channels==2)v*=ch==0?1-Math.max(0,balanceValue):1+Math.min(0,balanceValue);if(c.limiter()&&Math.abs(v)>.95)v=Math.copySign(.95+.05*Math.tanh((Math.abs(v)-.95)/.05),v);if(outputFloat){out.putFloat((float)Math.max(-1,Math.min(1,v)));continue;}boolean dither=!c.dither().equals("off")&&(outputBits<inputBits||sox!=0||c.eq()||c.preamp()!=0||c.crossfeed()!=0||c.balance()!=0);double shaped=v*scale;if(c.dither().equals("shaped"))shaped+=error[ch]*.75;double q=shaped+(dither?random.nextDouble()-random.nextDouble():0);long value=Math.max(-(long)scale,Math.min((long)scale-1,Math.round(q)));error[ch]=shaped-value;for(int b=0;b<outputBits/8;b++)out.put((byte)(value>>(b*8)));}}out.flip();return out;}
-    public ByteBuffer drain(){if(sox==0)return ByteBuffer.allocate(0);double[] tail=NativeAudio.resample64(sox,null);long saved=sox;sox=0;ByteBuffer result=finish(tail,tail==null?0:tail.length);sox=saved;return result;}
-    @Override public void close(){if(sox!=0){NativeAudio.closeSox(sox);sox=0;}}
+    private final DynamicBass bass;
+    private final AudioSettings.Extra fixedExtra;
+    private double[] scratch = new double[0];
+    private double[][] coefficients;
+    private java.util.List<AudioSettings.Band> coefficientBands;
+    private double[] channelSamples;
+    private ByteBuffer output = ByteBuffer.allocateDirect(0);
+    private final boolean outputFloat;
+    private final AudioSettings.Config fixed;
+    private final int inputRate, outputRate, channels, inputBits, outputBits;
+    private final Biquad[] filters;
+    private long sox;
+    private double autoGain = 1, gain = 1, wet = 0, mixValue = 0, balanceValue = 0;
+    private final Random random = new Random();
+    private final double[] error;
+
+    public PcmDsp(int rate, int out, int ch, int inBits, int bits, AudioSettings.Config c) {
+        this(rate, out, ch, inBits, bits, c, false);
+    }
+
+    public PcmDsp(
+            int rate,
+            int out,
+            int ch,
+            int inBits,
+            int bits,
+            AudioSettings.Config c,
+            boolean freeze) {
+        this(rate, out, ch, inBits, bits, c, freeze, false);
+    }
+
+    PcmDsp(
+            int rate,
+            int out,
+            int ch,
+            int inBits,
+            int bits,
+            AudioSettings.Config c,
+            boolean freeze,
+            boolean outputFloat) {
+        if (outputFloat && bits != 32) throw new IllegalArgumentException("Float 출력은 32비트여야 합니다.");
+        this.outputFloat = outputFloat;
+        bass = new DynamicBass(ch);
+        fixedExtra =
+                freeze
+                        ? new AudioSettings.Extra(
+                                "off",
+                                AudioSettings.extra.bass(),
+                                AudioSettings.extra.bassFrequency(),
+                                AudioSettings.extra.volumeCeiling())
+                        : null;
+        AudioSettings.Extra initial = freeze ? fixedExtra : AudioSettings.extra;
+        gain =
+                Math.pow(
+                                10,
+                                (c.preamp()
+                                                + (initial.replayGain().equals("off")
+                                                        ? 0
+                                                        : ReplayGain.gainDb))
+                                        / 20)
+                        * (initial.volumeCeiling() / 100.)
+                        * (c.mode().equals("usb") ? UsbVolume.softwareGain : 1);
+        autoGain = Math.pow(10, EqHeadroom.compensationDb(c, out) / 20);
+        fixed = freeze ? c : null;
+        inputRate = rate;
+        outputRate = out;
+        channels = ch;
+        inputBits = inBits;
+        outputBits = bits;
+        filters = new Biquad[c.bands().size()];
+        for (int i = 0; i < filters.length; i++) filters[i] = new Biquad(ch);
+        error = new double[ch];
+        if (rate != out)
+            sox = NativeAudio.createSox64(rate, out, ch, c.quality(), c.phase(), c.cutoff());
+    }
+
+    public ByteBuffer process(ByteBuffer input, int encoding) {
+        int bytes = encoding == 4 ? 4 : encoding == 3 ? 1 : inputBits / 8;
+        int count = input.remaining() / bytes;
+        if (scratch.length < count) scratch = new double[count];
+        double[] samples = scratch;
+        double inputScale = Math.scalb(1., bytes * 8 - 1);
+        ByteBuffer in = input.duplicate().order(ByteOrder.LITTLE_ENDIAN);
+        for (int i = 0; i < count; i++) {
+            samples[i] =
+                    switch (encoding) {
+                        case 4 -> in.getFloat();
+                        case 3 -> ((in.get() & 255) - 128) / 128f;
+                        default -> {
+                            boolean big =
+                                    encoding == 268435456
+                                            || encoding == 1342177280
+                                            || encoding == 1610612736;
+                            int v = 0;
+                            for (int j = 0; j < bytes; j++)
+                                v |= (in.get() & 255) << ((big ? bytes - 1 - j : j) * 8);
+                            if (bytes < 4) v = (v << (32 - bytes * 8)) >> (32 - bytes * 8);
+                            yield v / inputScale;
+                        }
+                    };
+        }
+        return finish(samples, count);
+    }
+
+    private ByteBuffer finish(double[] samples, int count) {
+        if (sox != 0) {
+            samples =
+                    NativeAudio.resample64(
+                            sox,
+                            samples.length == count
+                                    ? samples
+                                    : java.util.Arrays.copyOf(samples, count));
+            count = samples == null ? 0 : samples.length;
+        }
+        if (samples == null) samples = new double[0];
+        AudioSettings.Config c = fixed == null ? AudioSettings.current : fixed;
+        if (coefficientBands != c.bands()) {
+            coefficients = new double[filters.length][];
+            for (int i = 0; i < filters.length; i++)
+                coefficients[i] = Biquad.coefficients(c.bands().get(i), outputRate);
+            coefficientBands = c.bands();
+        }
+        double[][] co = coefficients;
+        double automatic = Math.pow(10, EqHeadroom.compensationDb(c, outputRate) / 20);
+        if (automatic < autoGain) autoGain = automatic;
+        AudioSettings.Extra extra = fixedExtra == null ? AudioSettings.extra : fixedExtra;
+        bass.configure(extra.bass(), extra.bassFrequency(), outputRate);
+        double
+                target =
+                        Math.pow(
+                                        10,
+                                        (c.preamp()
+                                                        + (extra.replayGain().equals("off")
+                                                                ? 0
+                                                                : ReplayGain.gainDb))
+                                                / 20)
+                                * (extra.volumeCeiling() / 100.)
+                                * (c.mode().equals("usb") ? UsbVolume.softwareGain : 1),
+                mix = c.crossfeed() / 100.;
+        if (target < gain) gain = target;
+        if (channelSamples == null) channelSamples = new double[channels];
+        double[] last = channelSamples;
+        double scale = Math.scalb(1., outputBits - 1);
+        int needed = count * (outputBits / 8);
+        if (output.capacity() < needed)
+            output = ByteBuffer.allocateDirect(needed).order(ByteOrder.LITTLE_ENDIAN);
+        ByteBuffer out = output;
+        out.clear();
+        for (int frame = 0; frame < count / channels; frame++) {
+            gain += (target - gain) * .002;
+            autoGain += (automatic - autoGain) * .0005;
+            wet += ((c.eq() ? 1. : 0.) - wet) * .002;
+            mixValue += (mix - mixValue) * .002;
+            balanceValue += (c.balance() / 100. - balanceValue) * .002;
+            for (int ch = 0; ch < channels; ch++) {
+                double v = samples[frame * channels + ch];
+                double raw = v;
+                if (c.eq() || wet > .00001)
+                    for (int band = 0; band < filters.length; band++)
+                        v = filters[band].sample(v, ch, co[band]);
+                last[ch] = (raw + (v - raw) * wet) * gain * autoGain;
+            }
+            if (extra.bass() > 0 || bass.active()) bass.frame(last, channels);
+            if (channels == 2 && mixValue > 0) {
+                double l = last[0], r = last[1];
+                last[0] = (l + mixValue * r) / (1 + mixValue);
+                last[1] = (r + mixValue * l) / (1 + mixValue);
+            }
+            for (int ch = 0; ch < channels; ch++) {
+                double v = last[ch];
+                if (channels == 2)
+                    v *= ch == 0 ? 1 - Math.max(0, balanceValue) : 1 + Math.min(0, balanceValue);
+                if (c.limiter() && Math.abs(v) > .95)
+                    v = Math.copySign(.95 + .05 * Math.tanh((Math.abs(v) - .95) / .05), v);
+                if (outputFloat) {
+                    out.putFloat((float) Math.max(-1, Math.min(1, v)));
+                    continue;
+                }
+                boolean dither =
+                        !c.dither().equals("off")
+                                && (outputBits < inputBits
+                                        || sox != 0
+                                        || c.eq()
+                                        || c.preamp() != 0
+                                        || c.crossfeed() != 0
+                                        || c.balance() != 0);
+                double shaped = v * scale;
+                if (c.dither().equals("shaped")) shaped += error[ch] * .75;
+                double q = shaped + (dither ? random.nextDouble() - random.nextDouble() : 0);
+                long value = Math.max(-(long) scale, Math.min((long) scale - 1, Math.round(q)));
+                error[ch] = shaped - value;
+                for (int b = 0; b < outputBits / 8; b++) out.put((byte) (value >> (b * 8)));
+            }
+        }
+        out.flip();
+        return out;
+    }
+
+    public ByteBuffer drain() {
+        if (sox == 0) return ByteBuffer.allocate(0);
+        double[] tail = NativeAudio.resample64(sox, null);
+        long saved = sox;
+        sox = 0;
+        ByteBuffer result = finish(tail, tail == null ? 0 : tail.length);
+        sox = saved;
+        return result;
+    }
+
+    @Override
+    public void close() {
+        if (sox != 0) {
+            NativeAudio.closeSox(sox);
+            sox = 0;
+        }
+    }
 }

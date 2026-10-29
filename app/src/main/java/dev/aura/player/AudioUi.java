@@ -1,4 +1,5 @@
 package dev.aura.player;
+
 import android.app.*;
 import android.content.Context;
 import android.graphics.Color;
@@ -8,53 +9,867 @@ import java.util.*;
 
 @androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
 public final class AudioUi {
-    private final Activity activity;private final LinearLayout root;private final java.util.function.Consumer<String> navigate;private final int mint=Ui.MINT,ink=Ui.INK,muted=Ui.MUTED;private int band;private EqGraph graph;private LinearLayout editor,graphPanel,filterHost;private TextView bandSelector,details,headroom,headroomDetail;private SeekBar frequencyBar,gainBar,qBar;private final List<SeekBar> graphicBars=new ArrayList<>();
-    public AudioUi(Activity a,LinearLayout root,java.util.function.Consumer<String> navigate){activity=a;this.root=root;this.navigate=navigate;}
-    private int dp(float value){return Ui.dp(activity,value);}
-    private TextView text(String s,int size,int color){TextView v=Ui.text(activity,s,size,color);v.setPadding(0,dp(9),0,dp(9));return v;}
-    private void title(String title){LinearLayout line=new LinearLayout(activity);line.setGravity(Gravity.CENTER_VERTICAL);Ui.IconButton back=new Ui.IconButton(activity,"back");back.iconColor(ink);back.setBackground(Ui.flatSurface(activity,0,22));back.setContentDescription(title.equals("오디오 설정")?"설정으로 돌아가기":"오디오 설정으로 돌아가기");Ui.tap(back,()->navigate.accept(title.equals("오디오 설정")?"settings":"audio"));line.addView(back,new LinearLayout.LayoutParams(dp(44),dp(44)));TextView name=Ui.text(activity,title,22,ink);line.addView(name,new LinearLayout.LayoutParams(0,dp(44),1));name.setGravity(Gravity.CENTER_VERTICAL);root.addView(line);}
-    private void hint(String value){TextView hint=text(value,11,muted);hint.setLineSpacing(dp(3),1);root.addView(hint);}
-    private void section(String title){TextView label=Ui.text(activity,title,12,muted);label.setPadding(dp(4),dp(24),0,dp(8));root.addView(label);}
-    private void button(String label,Runnable action){root.addView(Ui.button(activity,label,action,label.startsWith("출력 설정 적용")||label.startsWith("적용하고")));}
-    private void toggle(String title,boolean value,java.util.function.Consumer<Boolean> changed){root.addView(Ui.toggle(activity,title,value,changed));}
-    private TextView select(LinearLayout target,String title,String[] names,int index,java.util.function.IntConsumer changed){int initial=Math.max(0,Math.min(names.length-1,index));LinearLayout box=Ui.card(activity,12);box.setBackground(Ui.flatSurface(activity,target==root?Ui.SURFACE:Ui.BG,18));TextView label=Ui.text(activity,title,11,muted),value=Ui.text(activity,names[initial]+"  ⌄",14,ink);Ui.lines(value,2);value.setPadding(0,dp(7),0,dp(2));box.addView(label);box.addView(value);final int[] selected={initial};Ui.tap(box,()->new androidx.appcompat.app.AlertDialog.Builder(activity).setTitle(title).setSingleChoiceItems(names,selected[0],(dialog,which)->{selected[0]=which;value.setText(names[which]+"  ⌄");changed.accept(which);dialog.dismiss();}).setNegativeButton("취소",null).show());box.setContentDescription(title);target.addView(box);return value;}
-    private String valueText(String label,double value){if(label.startsWith("주파수"))return String.format(Locale.ROOT,"%.0f Hz",Math.exp(value));if(label.equals("Q"))return String.format(Locale.ROOT,"%.2f",value);return String.format(Locale.ROOT,label.contains("dB")?"%+.1f dB":label.contains("%")?"%.0f%%":"%.1f",value);}
-    private SeekBar slider(LinearLayout target,String label,double min,double max,double value,java.util.function.DoubleConsumer changed){LinearLayout holder=target==root?Ui.card(activity,16):new LinearLayout(activity);holder.setOrientation(LinearLayout.VERTICAL);if(target!=root)holder.setPadding(0,dp(10),0,0);LinearLayout line=new LinearLayout(activity);line.setGravity(Gravity.CENTER_VERTICAL);TextView name=Ui.text(activity,label,12,ink),number=Ui.text(activity,valueText(label,value),12,mint);Ui.lines(name,2);number.setGravity(Gravity.END);line.addView(name,new LinearLayout.LayoutParams(0,-2,1));line.addView(number);holder.addView(line);SeekBar bar=new SeekBar(activity);bar.setContentDescription(label);Ui.tint(bar);bar.setMax(1000);bar.setProgress((int)Math.round((value-min)/(max-min)*1000));bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){public void onProgressChanged(SeekBar b,int progress,boolean user){double actual=min+(max-min)*progress/1000.;number.setText(valueText(label,actual));androidx.core.view.ViewCompat.setStateDescription(b,valueText(label,actual));if(user)changed.accept(actual);}public void onStartTrackingTouch(SeekBar b){}public void onStopTrackingTouch(SeekBar b){}});holder.addView(bar,new LinearLayout.LayoutParams(-1,dp(44)));target.addView(holder);return bar;}
-    private void apply(){try{OutputRouting.requireReady(activity);}catch(IllegalStateException e){routingProblem(e.getMessage());return;}PlaybackService s=PlaybackService.instance;if(s==null){Toast.makeText(activity,"재생 서비스 연결 후 다시 시도해 주세요.",Toast.LENGTH_SHORT).show();return;}try{s.applyAudioSettings();}catch(IllegalStateException e){routingProblem(e.getMessage());return;}Toast.makeText(activity,"출력 설정을 적용했습니다",Toast.LENGTH_SHORT).show();}
-    private void routingProblem(String message){navigate.accept("audio");new androidx.appcompat.app.AlertDialog.Builder(activity).setTitle("출력 연결 확인").setMessage(message).setPositiveButton("USB 직접 연결",(d,w)->{if(activity instanceof MainActivity main)main.requestUsbOutput(true);else navigate.accept("output");}).setNeutralButton("출력 기기 선택",(d,w)->navigate.accept("output")).setNegativeButton("닫기",null).show();}
-    private void perfect(boolean on){var c=AudioSettings.current;if(on){var result=OutputRouting.assess(activity,c.mode(),true,c.deviceId());if(!result.allowed()){routingProblem(result.message());return;}AudioSettings.put("device",result.deviceId());}AudioSettings.put("perfect",on);apply();navigate.accept("audio");}
-    private void changeMode(String mode){var c=AudioSettings.current;if(mode.equals("usb")){if(!EngineMemory.usbPresent(activity)){Toast.makeText(activity,"USB DAC를 먼저 연결해 주세요.",Toast.LENGTH_SHORT).show();return;}if(!UsbRoute.available(activity)){navigate.accept("audio");if(activity instanceof MainActivity main)main.requestUsbOutput(c.perfect());else navigate.accept("output");return;}EngineMemory.enteringUsb(activity);}else if(c.mode().equals("usb")){EngineMemory.system(activity,mode,true);apply();navigate.accept("audio");return;}var result=OutputRouting.assess(activity,mode,c.perfect(),c.deviceId());if(!result.allowed()){routingProblem(result.message());return;}AudioSettings.put("mode",mode);AudioSettings.put("device",result.deviceId());if(!mode.equals("usb"))activity.getSharedPreferences("playback",0).edit().putBoolean("preferDirectUsb",false).apply();apply();navigate.accept("audio");}
-    private void engineSelector(){var current=AudioSettings.current;LinearLayout card=Ui.card(activity,12);card.setBackground(Ui.flatSurface(activity,Ui.SURFACE,18));card.addView(Ui.text(activity,"출력 엔진",11,muted));String[] names={"Android 기본","Hi-Res AudioTrack","USB DAC 직접 출력"};TextView value=Ui.text(activity,names[Math.max(0,List.of("android","hires","usb").indexOf(current.mode()))]+"  ⌄",14,ink);value.setPadding(0,dp(7),0,dp(2));card.addView(value);card.setContentDescription("출력 엔진");Ui.tap(card,()->{boolean available=EngineMemory.usbPresent(activity);String[] labels={names[0],names[1],available?names[2]:names[2]+" · DAC 미연결"};ArrayAdapter<String> choices=new ArrayAdapter<>(activity,android.R.layout.simple_list_item_single_choice,labels){@Override public boolean areAllItemsEnabled(){return false;}@Override public boolean isEnabled(int position){return position!=2||EngineMemory.usbPresent(activity);}@Override public View getView(int position,View recycled,ViewGroup parent){TextView row=(TextView)super.getView(position,recycled,parent);row.setTextSize(14);row.setTextColor(isEnabled(position)?ink:muted);row.setAlpha(isEnabled(position)?1:.4f);row.setEnabled(isEnabled(position));row.setMinHeight(dp(56));return row;}};new androidx.appcompat.app.AlertDialog.Builder(activity).setTitle("출력 엔진").setSingleChoiceItems(choices,List.of("android","hires","usb").indexOf(AudioSettings.current.mode()),(dialog,index)->{if(!choices.isEnabled(index))return;dialog.dismiss();changeMode(new String[]{"android","hires","usb"}[index]);}).setNegativeButton("취소",null).show();});root.addView(card);}
-    public void tone(){title("음향 효과");var c=AudioSettings.current;if(c.perfect()){hint("비트퍼펙트 재생 중에는 음향 효과를 우회합니다. 비트퍼펙트를 끄면 저장한 효과를 사용할 수 있습니다.");return;}select(root,"ReplayGain 음량 맞춤",new String[]{"꺼짐","곡 기준","앨범 기준"},List.of("off","track","album").indexOf(AudioSettings.extra.replayGain()),i->{AudioSettings.put("replayGain",new String[]{"off","track","album"}[i]);ReplayGain.update();});hint("태그에 기록된 음량 정보를 사용합니다. 태그가 없으면 음량을 유지합니다.");section("다이내믹 베이스");slider(root,"저음 강화 %",0,100,AudioSettings.extra.bass(),v->AudioSettings.put("dynamicBass",v));slider(root,"중심 주파수 Hz",40,160,AudioSettings.extra.bassFrequency(),v->AudioSettings.put("bassFrequency",v));hint("저역을 보강하면서 큰 소리의 피크를 줄입니다.");section("헤드폰 공간감");slider(root,"크로스피드 %",0,50,c.crossfeed(),v->AudioSettings.put("crossfeed",v));slider(root,"좌우 밸런스",-100,100,c.balance(),v->AudioSettings.put("balance",v));button("음향 설정 적용",this::apply);}
-    public void audio(){title("오디오 설정");hint(PcmSink.status+(PcmSink.routed.isEmpty()?"":"\n현재 경로: "+PcmSink.routed));section("출력 경로");var c=AudioSettings.current;
+    private final Activity activity;
+    private final LinearLayout root;
+    private final java.util.function.Consumer<String> navigate;
+    private final int mint = Ui.MINT, ink = Ui.INK, muted = Ui.MUTED;
+    private int band;
+    private EqGraph graph;
+    private LinearLayout editor, graphPanel, filterHost;
+    private TextView bandSelector, details, headroom, headroomDetail;
+    private SeekBar frequencyBar, gainBar, qBar;
+    private final List<SeekBar> graphicBars = new ArrayList<>();
+
+    public AudioUi(Activity a, LinearLayout root, java.util.function.Consumer<String> navigate) {
+        activity = a;
+        this.root = root;
+        this.navigate = navigate;
+    }
+
+    private int dp(float value) {
+        return Ui.dp(activity, value);
+    }
+
+    private TextView text(String s, int size, int color) {
+        TextView v = Ui.text(activity, s, size, color);
+        v.setPadding(0, dp(9), 0, dp(9));
+        return v;
+    }
+
+    private void title(String title) {
+        LinearLayout line = new LinearLayout(activity);
+        line.setGravity(Gravity.CENTER_VERTICAL);
+        Ui.IconButton back = new Ui.IconButton(activity, "back");
+        back.iconColor(ink);
+        back.setBackground(Ui.flatSurface(activity, 0, 22));
+        back.setContentDescription(title.equals("오디오 설정") ? "설정으로 돌아가기" : "오디오 설정으로 돌아가기");
+        Ui.tap(back, () -> navigate.accept(title.equals("오디오 설정") ? "settings" : "audio"));
+        line.addView(back, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        TextView name = Ui.text(activity, title, 22, ink);
+        line.addView(name, new LinearLayout.LayoutParams(0, dp(44), 1));
+        name.setGravity(Gravity.CENTER_VERTICAL);
+        root.addView(line);
+    }
+
+    private void hint(String value) {
+        TextView hint = text(value, 11, muted);
+        hint.setLineSpacing(dp(3), 1);
+        root.addView(hint);
+    }
+
+    private void section(String title) {
+        TextView label = Ui.text(activity, title, 12, muted);
+        label.setPadding(dp(4), dp(24), 0, dp(8));
+        root.addView(label);
+    }
+
+    private void button(String label, Runnable action) {
+        root.addView(
+                Ui.button(
+                        activity,
+                        label,
+                        action,
+                        label.startsWith("출력 설정 적용") || label.startsWith("적용하고")));
+    }
+
+    private void toggle(String title, boolean value, java.util.function.Consumer<Boolean> changed) {
+        root.addView(Ui.toggle(activity, title, value, changed));
+    }
+
+    private TextView select(
+            LinearLayout target,
+            String title,
+            String[] names,
+            int index,
+            java.util.function.IntConsumer changed) {
+        int initial = Math.max(0, Math.min(names.length - 1, index));
+        LinearLayout box = Ui.card(activity, 12);
+        box.setBackground(Ui.flatSurface(activity, target == root ? Ui.SURFACE : Ui.BG, 18));
+        TextView label = Ui.text(activity, title, 11, muted),
+                value = Ui.text(activity, names[initial] + "  ⌄", 14, ink);
+        Ui.lines(value, 2);
+        value.setPadding(0, dp(7), 0, dp(2));
+        box.addView(label);
+        box.addView(value);
+        final int[] selected = {initial};
+        Ui.tap(
+                box,
+                () ->
+                        new androidx.appcompat.app.AlertDialog.Builder(activity)
+                                .setTitle(title)
+                                .setSingleChoiceItems(
+                                        names,
+                                        selected[0],
+                                        (dialog, which) -> {
+                                            selected[0] = which;
+                                            value.setText(names[which] + "  ⌄");
+                                            changed.accept(which);
+                                            dialog.dismiss();
+                                        })
+                                .setNegativeButton("취소", null)
+                                .show());
+        box.setContentDescription(title);
+        target.addView(box);
+        return value;
+    }
+
+    private String valueText(String label, double value) {
+        if (label.startsWith("주파수")) return String.format(Locale.ROOT, "%.0f Hz", Math.exp(value));
+        if (label.equals("Q")) return String.format(Locale.ROOT, "%.2f", value);
+        return String.format(
+                Locale.ROOT,
+                label.contains("dB") ? "%+.1f dB" : label.contains("%") ? "%.0f%%" : "%.1f",
+                value);
+    }
+
+    private SeekBar slider(
+            LinearLayout target,
+            String label,
+            double min,
+            double max,
+            double value,
+            java.util.function.DoubleConsumer changed) {
+        LinearLayout holder = target == root ? Ui.card(activity, 16) : new LinearLayout(activity);
+        holder.setOrientation(LinearLayout.VERTICAL);
+        if (target != root) holder.setPadding(0, dp(10), 0, 0);
+        LinearLayout line = new LinearLayout(activity);
+        line.setGravity(Gravity.CENTER_VERTICAL);
+        TextView name = Ui.text(activity, label, 12, ink),
+                number = Ui.text(activity, valueText(label, value), 12, mint);
+        Ui.lines(name, 2);
+        number.setGravity(Gravity.END);
+        line.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
+        line.addView(number);
+        holder.addView(line);
+        SeekBar bar = new SeekBar(activity);
+        bar.setContentDescription(label);
+        Ui.tint(bar);
+        bar.setMax(1000);
+        bar.setProgress((int) Math.round((value - min) / (max - min) * 1000));
+        bar.setOnSeekBarChangeListener(
+                new SeekBar.OnSeekBarChangeListener() {
+                    public void onProgressChanged(SeekBar b, int progress, boolean user) {
+                        double actual = min + (max - min) * progress / 1000.;
+                        number.setText(valueText(label, actual));
+                        androidx.core.view.ViewCompat.setStateDescription(
+                                b, valueText(label, actual));
+                        if (user) changed.accept(actual);
+                    }
+
+                    public void onStartTrackingTouch(SeekBar b) {}
+
+                    public void onStopTrackingTouch(SeekBar b) {}
+                });
+        holder.addView(bar, new LinearLayout.LayoutParams(-1, dp(44)));
+        target.addView(holder);
+        return bar;
+    }
+
+    private void apply() {
+        try {
+            OutputRouting.requireReady(activity);
+        } catch (IllegalStateException e) {
+            routingProblem(e.getMessage());
+            return;
+        }
+        PlaybackService s = PlaybackService.instance;
+        if (s == null) {
+            Toast.makeText(activity, "재생 서비스 연결 후 다시 시도해 주세요.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        try {
+            s.applyAudioSettings();
+        } catch (IllegalStateException e) {
+            routingProblem(e.getMessage());
+            return;
+        }
+        Toast.makeText(activity, "출력 설정을 적용했습니다", Toast.LENGTH_SHORT).show();
+    }
+
+    private void routingProblem(String message) {
+        navigate.accept("audio");
+        new androidx.appcompat.app.AlertDialog.Builder(activity)
+                .setTitle("출력 연결 확인")
+                .setMessage(message)
+                .setPositiveButton(
+                        "USB 직접 연결",
+                        (d, w) -> {
+                            if (activity instanceof MainActivity main) main.requestUsbOutput(true);
+                            else navigate.accept("output");
+                        })
+                .setNeutralButton("출력 기기 선택", (d, w) -> navigate.accept("output"))
+                .setNegativeButton("닫기", null)
+                .show();
+    }
+
+    private void perfect(boolean on) {
+        var c = AudioSettings.current;
+        if (on) {
+            var result = OutputRouting.assess(activity, c.mode(), true, c.deviceId());
+            if (!result.allowed()) {
+                routingProblem(result.message());
+                return;
+            }
+            AudioSettings.put("device", result.deviceId());
+        }
+        AudioSettings.put("perfect", on);
+        apply();
+        navigate.accept("audio");
+    }
+
+    private void changeMode(String mode) {
+        var c = AudioSettings.current;
+        if (mode.equals("usb")) {
+            if (!EngineMemory.usbPresent(activity)) {
+                Toast.makeText(activity, "USB DAC를 먼저 연결해 주세요.", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            if (!UsbRoute.available(activity)) {
+                navigate.accept("audio");
+                if (activity instanceof MainActivity main) main.requestUsbOutput(c.perfect());
+                else navigate.accept("output");
+                return;
+            }
+            EngineMemory.enteringUsb(activity);
+        } else if (c.mode().equals("usb")) {
+            EngineMemory.system(activity, mode, true);
+            apply();
+            navigate.accept("audio");
+            return;
+        }
+        var result = OutputRouting.assess(activity, mode, c.perfect(), c.deviceId());
+        if (!result.allowed()) {
+            routingProblem(result.message());
+            return;
+        }
+        AudioSettings.put("mode", mode);
+        AudioSettings.put("device", result.deviceId());
+        if (!mode.equals("usb"))
+            activity.getSharedPreferences("playback", 0)
+                    .edit()
+                    .putBoolean("preferDirectUsb", false)
+                    .apply();
+        apply();
+        navigate.accept("audio");
+    }
+
+    private void engineSelector() {
+        var current = AudioSettings.current;
+        LinearLayout card = Ui.card(activity, 12);
+        card.setBackground(Ui.flatSurface(activity, Ui.SURFACE, 18));
+        card.addView(Ui.text(activity, "출력 엔진", 11, muted));
+        String[] names = {"Android 기본", "Hi-Res AudioTrack", "USB DAC 직접 출력"};
+        TextView value =
+                Ui.text(
+                        activity,
+                        names[
+                                        Math.max(
+                                                0,
+                                                List.of("android", "hires", "usb")
+                                                        .indexOf(current.mode()))]
+                                + "  ⌄",
+                        14,
+                        ink);
+        value.setPadding(0, dp(7), 0, dp(2));
+        card.addView(value);
+        card.setContentDescription("출력 엔진");
+        Ui.tap(
+                card,
+                () -> {
+                    boolean available = EngineMemory.usbPresent(activity);
+                    String[] labels = {
+                        names[0], names[1], available ? names[2] : names[2] + " · DAC 미연결"
+                    };
+                    ArrayAdapter<String> choices =
+                            new ArrayAdapter<>(
+                                    activity,
+                                    android.R.layout.simple_list_item_single_choice,
+                                    labels) {
+                                @Override
+                                public boolean areAllItemsEnabled() {
+                                    return false;
+                                }
+
+                                @Override
+                                public boolean isEnabled(int position) {
+                                    return position != 2 || EngineMemory.usbPresent(activity);
+                                }
+
+                                @Override
+                                public View getView(int position, View recycled, ViewGroup parent) {
+                                    TextView row =
+                                            (TextView) super.getView(position, recycled, parent);
+                                    row.setTextSize(14);
+                                    row.setTextColor(isEnabled(position) ? ink : muted);
+                                    row.setAlpha(isEnabled(position) ? 1 : .4f);
+                                    row.setEnabled(isEnabled(position));
+                                    row.setMinHeight(dp(56));
+                                    return row;
+                                }
+                            };
+                    new androidx.appcompat.app.AlertDialog.Builder(activity)
+                            .setTitle("출력 엔진")
+                            .setSingleChoiceItems(
+                                    choices,
+                                    List.of("android", "hires", "usb")
+                                            .indexOf(AudioSettings.current.mode()),
+                                    (dialog, index) -> {
+                                        if (!choices.isEnabled(index)) return;
+                                        dialog.dismiss();
+                                        changeMode(new String[] {"android", "hires", "usb"}[index]);
+                                    })
+                            .setNegativeButton("취소", null)
+                            .show();
+                });
+        root.addView(card);
+    }
+
+    public void tone() {
+        title("음향 효과");
+        var c = AudioSettings.current;
+        if (c.perfect()) {
+            hint("비트퍼펙트 재생 중에는 음향 효과를 우회합니다. 비트퍼펙트를 끄면 저장한 효과를 사용할 수 있습니다.");
+            return;
+        }
+        select(
+                root,
+                "ReplayGain 음량 맞춤",
+                new String[] {"꺼짐", "곡 기준", "앨범 기준"},
+                List.of("off", "track", "album").indexOf(AudioSettings.extra.replayGain()),
+                i -> {
+                    AudioSettings.put("replayGain", new String[] {"off", "track", "album"}[i]);
+                    ReplayGain.update();
+                });
+        hint("태그에 기록된 음량 정보를 사용합니다. 태그가 없으면 음량을 유지합니다.");
+        section("다이내믹 베이스");
+        slider(
+                root,
+                "저음 강화 %",
+                0,
+                100,
+                AudioSettings.extra.bass(),
+                v -> AudioSettings.put("dynamicBass", v));
+        slider(
+                root,
+                "중심 주파수 Hz",
+                40,
+                160,
+                AudioSettings.extra.bassFrequency(),
+                v -> AudioSettings.put("bassFrequency", v));
+        hint("저역을 보강하면서 큰 소리의 피크를 줄입니다.");
+        section("헤드폰 공간감");
+        slider(root, "크로스피드 %", 0, 50, c.crossfeed(), v -> AudioSettings.put("crossfeed", v));
+        slider(root, "좌우 밸런스", -100, 100, c.balance(), v -> AudioSettings.put("balance", v));
+        button("음향 설정 적용", this::apply);
+    }
+
+    public void audio() {
+        title("오디오 설정");
+        hint(PcmSink.status + (PcmSink.routed.isEmpty() ? "" : "\n현재 경로: " + PcmSink.routed));
+        section("출력 경로");
+        var c = AudioSettings.current;
         engineSelector();
         section("USB DAC 볼륨 팝업");
-        toggle("앱 안에서 볼륨 팝업 표시",UsbVolumePopup.enabled(activity,UsbVolumePopup.IN_APP),on->{activity.getSharedPreferences("playback",0).edit().putBoolean(UsbVolumePopup.IN_APP,on).apply();UsbVolumePopup.hide(false);});
-        toggle("백그라운드에서도 볼륨 팝업 표시",UsbVolumePopup.enabled(activity,UsbVolumePopup.BACKGROUND)&&android.provider.Settings.canDrawOverlays(activity),on->UsbVolumePopup.backgroundSetting(activity,on,()->navigate.accept("audio")));
-        hint("USB DAC 직접 출력 볼륨을 조절하면 마지막 조작 후 3초 동안 표시합니다. 플레이어 화면에서는 팝업을 표시하지 않습니다. 백그라운드 표시는 ‘다른 앱 위에 표시’ 권한이 필요합니다.");
+        toggle(
+                "앱 안에서 볼륨 팝업 표시",
+                UsbVolumePopup.enabled(activity, UsbVolumePopup.IN_APP),
+                on -> {
+                    activity.getSharedPreferences("playback", 0)
+                            .edit()
+                            .putBoolean(UsbVolumePopup.IN_APP, on)
+                            .apply();
+                    UsbVolumePopup.hide(false);
+                });
+        toggle(
+                "백그라운드에서도 볼륨 팝업 표시",
+                UsbVolumePopup.enabled(activity, UsbVolumePopup.BACKGROUND)
+                        && android.provider.Settings.canDrawOverlays(activity),
+                on ->
+                        UsbVolumePopup.backgroundSetting(
+                                activity, on, () -> navigate.accept("audio")));
+        hint(
+                "USB DAC 직접 출력 볼륨을 조절하면 마지막 조작 후 3초 동안 표시합니다. 플레이어 화면에서는 팝업을 표시하지 않습니다. 백그라운드 표시는 ‘다른 앱 위에 표시’ 권한이 필요합니다.");
         section("출력 처리");
-        toggle("비트퍼펙트 · 지원되는 원본 형식만",c.perfect(),this::perfect);
-        if(c.perfect())hint("DSP·SoX·볼륨 가공을 우회합니다. 지원하지 않는 형식은 재생이 중단됩니다. 실제 기기에서 데이터 검증이 필요합니다.");
-        button("출력 기기 / USB 권한 선택",()->navigate.accept("output"));button("SoX Resampler  ›",()->navigate.accept("sox"));button("이퀄라이저 · 7밴드 / 파라메트릭  ›",()->navigate.accept("eq"));
-        section("음향 처리");if(!c.perfect()){select(root,"ReplayGain 음량 맞춤",new String[]{"꺼짐","곡 기준","앨범 기준"},List.of("off","track","album").indexOf(AudioSettings.extra.replayGain()),i->{AudioSettings.put("replayGain",new String[]{"off","track","album"}[i]);ReplayGain.update();});hint(ReplayGain.status+" · 태그가 없는 곡은 원래 음량을 유지합니다.");slider(root,"다이내믹 베이스 강도",0,100,AudioSettings.extra.bass(),v->AudioSettings.put("dynamicBass",v));slider(root,"베이스 중심 주파수 Hz",40,160,AudioSettings.extra.bassFrequency(),v->AudioSettings.put("bassFrequency",v));hint("저역을 보강하고 피크를 줄입니다.");}if(!c.perfect()){select(root,"출력 Bit Depth",new String[]{"원본 자동","16 bit","24 bit","32 bit"},List.of(0,16,24,32).indexOf(c.bits()),i->AudioSettings.put("bits",new int[]{0,16,24,32}[i]));slider(root,"프리앰프 dB",-24,6,c.preamp(),v->AudioSettings.put("preamp",v));slider(root,"헤드폰 크로스피드 %",0,50,c.crossfeed(),v->AudioSettings.put("crossfeed",v));slider(root,"좌우 밸런스",-100,100,c.balance(),v->AudioSettings.put("balance",v));toggle("소프트 리미터",c.limiter(),v->AudioSettings.put("limiter",v));}
-        section("재생 안정성 · DSD");select(root,"버퍼 크기",new String[]{"50 ms","100 ms","200 ms","500 ms"},List.of(50,100,200,500).indexOf(c.bufferMs()),i->AudioSettings.put("buffer",new int[]{50,100,200,500}[i]));
-        select(root,"DSD 재생",new String[]{"PCM 변환","DoP · 지원 USB 경로"},List.of("pcm","dop").indexOf(c.dsd()),i->AudioSettings.put("dsd",new String[]{"pcm","dop"}[i]));
-        hint("이 버전은 Native DSD를 지원하지 않습니다. PCM 또는 DoP를 선택해 주세요.");button("출력 설정 적용",this::apply);button("기본 Android 출력으로 되돌리기",()->{AudioSettings.put("mode","android");AudioSettings.put("device",0);AudioSettings.put("perfect",false);AudioSettings.put("sox",false);AudioSettings.put("rate",0);AudioSettings.put("bits",0);AudioSettings.put("dsd","pcm");apply();navigate.accept("audio");});button("이 기기 프리셋 저장",()->{AudioSettings.saveProfile(AudioSettings.profileKey(activity));Toast.makeText(activity,"저장했습니다",Toast.LENGTH_SHORT).show();});button("이 기기 프리셋 불러오기",()->{if(AudioSettings.restoreProfile(AudioSettings.profileKey(activity))){AudioSettings.put("device",c.deviceId());apply();navigate.accept("audio");}else Toast.makeText(activity,"저장된 프리셋이 없습니다",Toast.LENGTH_SHORT).show();});
+        toggle("비트퍼펙트 · 지원되는 원본 형식만", c.perfect(), this::perfect);
+        if (c.perfect())
+            hint("DSP·SoX·볼륨 가공을 우회합니다. 지원하지 않는 형식은 재생이 중단됩니다. 실제 기기에서 데이터 검증이 필요합니다.");
+        button("출력 기기 / USB 권한 선택", () -> navigate.accept("output"));
+        button("SoX Resampler  ›", () -> navigate.accept("sox"));
+        button("이퀄라이저 · 7밴드 / 파라메트릭  ›", () -> navigate.accept("eq"));
+        section("음향 처리");
+        if (!c.perfect()) {
+            select(
+                    root,
+                    "ReplayGain 음량 맞춤",
+                    new String[] {"꺼짐", "곡 기준", "앨범 기준"},
+                    List.of("off", "track", "album").indexOf(AudioSettings.extra.replayGain()),
+                    i -> {
+                        AudioSettings.put("replayGain", new String[] {"off", "track", "album"}[i]);
+                        ReplayGain.update();
+                    });
+            hint(ReplayGain.status + " · 태그가 없는 곡은 원래 음량을 유지합니다.");
+            slider(
+                    root,
+                    "다이내믹 베이스 강도",
+                    0,
+                    100,
+                    AudioSettings.extra.bass(),
+                    v -> AudioSettings.put("dynamicBass", v));
+            slider(
+                    root,
+                    "베이스 중심 주파수 Hz",
+                    40,
+                    160,
+                    AudioSettings.extra.bassFrequency(),
+                    v -> AudioSettings.put("bassFrequency", v));
+            hint("저역을 보강하고 피크를 줄입니다.");
+        }
+        if (!c.perfect()) {
+            select(
+                    root,
+                    "출력 Bit Depth",
+                    new String[] {"원본 자동", "16 bit", "24 bit", "32 bit"},
+                    List.of(0, 16, 24, 32).indexOf(c.bits()),
+                    i -> AudioSettings.put("bits", new int[] {0, 16, 24, 32}[i]));
+            slider(root, "프리앰프 dB", -24, 6, c.preamp(), v -> AudioSettings.put("preamp", v));
+            slider(
+                    root,
+                    "헤드폰 크로스피드 %",
+                    0,
+                    50,
+                    c.crossfeed(),
+                    v -> AudioSettings.put("crossfeed", v));
+            slider(root, "좌우 밸런스", -100, 100, c.balance(), v -> AudioSettings.put("balance", v));
+            toggle("소프트 리미터", c.limiter(), v -> AudioSettings.put("limiter", v));
+        }
+        section("재생 안정성 · DSD");
+        select(
+                root,
+                "버퍼 크기",
+                new String[] {"50 ms", "100 ms", "200 ms", "500 ms"},
+                List.of(50, 100, 200, 500).indexOf(c.bufferMs()),
+                i -> AudioSettings.put("buffer", new int[] {50, 100, 200, 500}[i]));
+        select(
+                root,
+                "DSD 재생",
+                new String[] {"PCM 변환", "DoP · 지원 USB 경로"},
+                List.of("pcm", "dop").indexOf(c.dsd()),
+                i -> AudioSettings.put("dsd", new String[] {"pcm", "dop"}[i]));
+        hint("이 버전은 Native DSD를 지원하지 않습니다. PCM 또는 DoP를 선택해 주세요.");
+        button("출력 설정 적용", this::apply);
+        button(
+                "기본 Android 출력으로 되돌리기",
+                () -> {
+                    AudioSettings.put("mode", "android");
+                    AudioSettings.put("device", 0);
+                    AudioSettings.put("perfect", false);
+                    AudioSettings.put("sox", false);
+                    AudioSettings.put("rate", 0);
+                    AudioSettings.put("bits", 0);
+                    AudioSettings.put("dsd", "pcm");
+                    apply();
+                    navigate.accept("audio");
+                });
+        button(
+                "이 기기 프리셋 저장",
+                () -> {
+                    AudioSettings.saveProfile(AudioSettings.profileKey(activity));
+                    Toast.makeText(activity, "저장했습니다", Toast.LENGTH_SHORT).show();
+                });
+        button(
+                "이 기기 프리셋 불러오기",
+                () -> {
+                    if (AudioSettings.restoreProfile(AudioSettings.profileKey(activity))) {
+                        AudioSettings.put("device", c.deviceId());
+                        apply();
+                        navigate.accept("audio");
+                    } else Toast.makeText(activity, "저장된 프리셋이 없습니다", Toast.LENGTH_SHORT).show();
+                });
     }
-    public void sox(){title("SoX Resampler");var c=AudioSettings.current;if(c.perfect()){hint("비트퍼펙트 모드에서는 리샘플링을 우회합니다.");button("비트퍼펙트 끄기",()->{AudioSettings.put("perfect",false);apply();navigate.accept("sox");});return;}
-        toggle("SoX 리샘플링",c.sox(),v->AudioSettings.put("sox",v));select(root,"출력 샘플레이트",new String[]{"원본 자동","44.1 kHz","48 kHz","88.2 kHz","96 kHz","176.4 kHz","192 kHz","352.8 kHz","384 kHz"},List.of(0,44100,48000,88200,96000,176400,192000,352800,384000).indexOf(c.sampleRate()),i->AudioSettings.put("rate",new int[]{0,44100,48000,88200,96000,176400,192000,352800,384000}[i]));select(root,"품질",new String[]{"LQ","MQ","HQ","VHQ"},List.of(1,2,4,6).indexOf(c.quality()),i->AudioSettings.put("quality",new int[]{1,2,4,6}[i]));slider(root,"위상 응답 · 0 최소 / 50 선형 / 100 최대",0,100,c.phase(),v->AudioSettings.put("phase",v));slider(root,"컷오프 · Nyquist 대비 %",80,99,c.cutoff(),v->AudioSettings.put("cutoff",v));select(root,"출력 디더링",new String[]{"자동 TPDF","끄기","TPDF","1차 노이즈 셰이핑"},List.of("auto","off","tpdf","shaped").indexOf(c.dither()),i->AudioSettings.put("dither",new String[]{"auto","off","tpdf","shaped"}[i]));hint("디더링은 정수 PCM 양자화 단계에 적용됩니다. 형식·필터 변경 후 아래 적용 버튼을 눌러 주세요.");button("적용하고 재생 위치 유지",this::apply);
+
+    public void sox() {
+        title("SoX Resampler");
+        var c = AudioSettings.current;
+        if (c.perfect()) {
+            hint("비트퍼펙트 모드에서는 리샘플링을 우회합니다.");
+            button(
+                    "비트퍼펙트 끄기",
+                    () -> {
+                        AudioSettings.put("perfect", false);
+                        apply();
+                        navigate.accept("sox");
+                    });
+            return;
+        }
+        toggle("SoX 리샘플링", c.sox(), v -> AudioSettings.put("sox", v));
+        select(
+                root,
+                "출력 샘플레이트",
+                new String[] {
+                    "원본 자동",
+                    "44.1 kHz",
+                    "48 kHz",
+                    "88.2 kHz",
+                    "96 kHz",
+                    "176.4 kHz",
+                    "192 kHz",
+                    "352.8 kHz",
+                    "384 kHz"
+                },
+                List.of(0, 44100, 48000, 88200, 96000, 176400, 192000, 352800, 384000)
+                        .indexOf(c.sampleRate()),
+                i ->
+                        AudioSettings.put(
+                                "rate",
+                                new int[] {
+                                            0, 44100, 48000, 88200, 96000, 176400, 192000, 352800,
+                                            384000
+                                        }
+                                        [i]));
+        select(
+                root,
+                "품질",
+                new String[] {"LQ", "MQ", "HQ", "VHQ"},
+                List.of(1, 2, 4, 6).indexOf(c.quality()),
+                i -> AudioSettings.put("quality", new int[] {1, 2, 4, 6}[i]));
+        slider(
+                root,
+                "위상 응답 · 0 최소 / 50 선형 / 100 최대",
+                0,
+                100,
+                c.phase(),
+                v -> AudioSettings.put("phase", v));
+        slider(root, "컷오프 · Nyquist 대비 %", 80, 99, c.cutoff(), v -> AudioSettings.put("cutoff", v));
+        select(
+                root,
+                "출력 디더링",
+                new String[] {"자동 TPDF", "끄기", "TPDF", "1차 노이즈 셰이핑"},
+                List.of("auto", "off", "tpdf", "shaped").indexOf(c.dither()),
+                i ->
+                        AudioSettings.put(
+                                "dither", new String[] {"auto", "off", "tpdf", "shaped"}[i]));
+        hint("디더링은 정수 PCM 양자화 단계에 적용됩니다. 형식·필터 변경 후 아래 적용 버튼을 눌러 주세요.");
+        button("적용하고 재생 위치 유지", this::apply);
     }
-    public void eq(){title("이퀄라이저");var c=AudioSettings.current;if(c.perfect()){hint("비트퍼펙트 모드에서는 EQ와 자동 보정을 우회합니다.");button("비트퍼펙트 끄기",()->{AudioSettings.put("perfect",false);apply();navigate.accept("eq");});return;}
-        toggle("EQ 사용",c.eq(),on->{AudioSettings.put("eq",on);refreshHeadroom();});
-        LinearLayout modes=new LinearLayout(activity);modes.setPadding(dp(4),dp(4),dp(4),dp(4));modes.setBackground(Ui.flatSurface(activity,Ui.SURFACE,16));modes.addView(Ui.segment(activity,"7밴드",c.eqMode().equals("graphic"),()->switchEq("graphic")),new LinearLayout.LayoutParams(0,dp(40),1));modes.addView(Ui.segment(activity,"파라메트릭",!c.eqMode().equals("graphic"),()->switchEq("parametric")),new LinearLayout.LayoutParams(0,dp(40),1));LinearLayout.LayoutParams modeParams=new LinearLayout.LayoutParams(-1,-2);modeParams.topMargin=dp(12);root.addView(modes,modeParams);
-        graphPanel=Ui.card(activity,12);graphPanel.setTag("eqPanel");LinearLayout heading=new LinearLayout(activity);heading.setGravity(Gravity.CENTER_VERTICAL);TextView label=Ui.text(activity,"주파수 응답",12,ink),range=Ui.text(activity,"20 Hz — 20 kHz",10,muted);heading.addView(label,new LinearLayout.LayoutParams(0,-2,1));heading.addView(range);heading.setPadding(dp(4),dp(2),dp(4),dp(2));graphPanel.addView(heading);graph=new EqGraph(activity);graphPanel.addView(graph,new LinearLayout.LayoutParams(-1,dp(192)));TextView legend=Ui.text(activity,"파란 선 · 전체 응답    점선 · 선택 밴드",10,muted);legend.setPadding(dp(4),0,0,dp(4));graphPanel.addView(legend);root.addView(graphPanel);
-        if(c.eqMode().equals("graphic")){graphicBars.clear();LinearLayout faders=new LinearLayout(activity);faders.setPadding(0,dp(12),0,0);for(int i=0;i<7;i++){final int index=i;var current=c.bands().get(i);String frequency=current.frequency()<1000?String.format(Locale.ROOT,"%.0f",current.frequency()):String.format(Locale.ROOT,"%.1fk",current.frequency()/1000);LinearLayout column=new LinearLayout(activity);column.setOrientation(LinearLayout.VERTICAL);column.setGravity(Gravity.CENTER_HORIZONTAL);TextView value=Ui.text(activity,String.format(Locale.ROOT,"%+.1f",current.gain()),11,mint);value.setGravity(Gravity.CENTER);column.addView(value,new LinearLayout.LayoutParams(-1,dp(22)));FrameLayout track=new FrameLayout(activity);track.setClipChildren(false);track.setClipToPadding(false);SeekBar bar=new SeekBar(activity);Ui.tint(bar);bar.setMinimumHeight(0);bar.setRotation(-90);bar.setMax(1000);bar.setProgress((int)Math.round((current.gain()+12)/24*1000));bar.setContentDescription(String.format(Locale.ROOT,"%.0f Hz 게인",current.frequency()));bar.setTag("graphicBand"+i);FrameLayout.LayoutParams faderParams=new FrameLayout.LayoutParams(dp(140),dp(44),Gravity.CENTER);track.addView(bar,faderParams);column.addView(track,new LinearLayout.LayoutParams(-1,dp(140)));TextView name=Ui.text(activity,frequency,10,muted);name.setGravity(Gravity.CENTER);column.addView(name,new LinearLayout.LayoutParams(-1,dp(28)));faders.addView(column,new LinearLayout.LayoutParams(0,-2,1));bar.setOnTouchListener((view,event)->{if(event.getActionMasked()==MotionEvent.ACTION_DOWN)view.getParent().requestDisallowInterceptTouchEvent(true);else if(event.getActionMasked()==MotionEvent.ACTION_UP||event.getActionMasked()==MotionEvent.ACTION_CANCEL)view.getParent().requestDisallowInterceptTouchEvent(false);return false;});bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){public void onProgressChanged(SeekBar b,int progress,boolean user){double gain=-12+24*progress/1000.;value.setText(String.format(Locale.ROOT,"%+.1f",gain));androidx.core.view.ViewCompat.setStateDescription(b,String.format(Locale.ROOT,"%+.1f dB",gain));if(user){var before=AudioSettings.current.bands().get(index);AudioSettings.band(index,new AudioSettings.Band(before.frequency(),gain,1,"peak"));graph.selection(index);refreshHeadroom();}}public void onStartTrackingTouch(SeekBar b){}public void onStopTrackingTouch(SeekBar b){}});graphicBars.add(bar);}graphPanel.addView(faders);graph.onSelect(i->{graph.selection(i);for(int at=0;at<graphicBars.size();at++)graphicBars.get(at).setProgress((int)Math.round((AudioSettings.current.bands().get(at).gain()+12)/24*1000));refreshHeadroom();});}
-        else{String[] names=new String[c.bands().size()];for(int i=0;i<names.length;i++)names[i]="밴드 "+(i+1);LinearLayout selection=new LinearLayout(activity),bandHost=new LinearLayout(activity);bandHost.setOrientation(LinearLayout.VERTICAL);filterHost=new LinearLayout(activity);filterHost.setOrientation(LinearLayout.VERTICAL);LinearLayout.LayoutParams left=new LinearLayout.LayoutParams(0,-2,1);left.rightMargin=dp(8);selection.addView(bandHost,left);selection.addView(filterHost,new LinearLayout.LayoutParams(0,-2,1));graphPanel.addView(selection);bandSelector=select(bandHost,"밴드 선택",names,band,i->{band=i;editor();});editor=new LinearLayout(activity);editor.setOrientation(LinearLayout.VERTICAL);graphPanel.addView(editor);graph.onSelect(i->{boolean changed=band!=i;band=i;if(bandSelector!=null)bandSelector.setText("밴드 "+(i+1)+"  ⌄");if(changed)editor();else syncEditor();refreshHeadroom();});editor();}
-        LinearLayout auto=Ui.card(activity,16);var compensation=Ui.toggle(activity,"자동 프리앰프 보정",c.autoEqPreamp(),on->{AudioSettings.put("autoEqPreamp",on);refreshHeadroom();});compensation.setBackgroundColor(android.graphics.Color.TRANSPARENT);compensation.setPadding(0,0,0,dp(4));compensation.setMinHeight(dp(44));auto.addView(compensation,new LinearLayout.LayoutParams(-1,-2));headroom=Ui.text(activity,"",21,mint);headroom.setTag("eqHeadroom");headroom.setPadding(0,dp(10),0,dp(6));auto.addView(headroom);headroomDetail=Ui.text(activity,"",11,muted);auto.addView(headroomDetail);slider(auto,"수동 프리앰프 dB",-24,6,c.preamp(),value->{AudioSettings.put("preamp",value);refreshHeadroom();});root.addView(auto);hint("자동 보정은 필터의 최대 증폭과 1 dB 여유를 반영합니다. 수동 설정은 보존됩니다. 그래프는 필터 응답이며 기기를 측정한 값이 아닙니다.");button("현재 EQ 평탄하게",()->{for(int i=0;i<AudioSettings.current.bands().size();i++){var before=AudioSettings.current.bands().get(i);AudioSettings.band(i,new AudioSettings.Band(before.frequency(),0,before.q(),before.type()));}navigate.accept("eq");});refreshHeadroom();
+
+    public void eq() {
+        title("이퀄라이저");
+        var c = AudioSettings.current;
+        if (c.perfect()) {
+            hint("비트퍼펙트 모드에서는 EQ와 자동 보정을 우회합니다.");
+            button(
+                    "비트퍼펙트 끄기",
+                    () -> {
+                        AudioSettings.put("perfect", false);
+                        apply();
+                        navigate.accept("eq");
+                    });
+            return;
+        }
+        toggle(
+                "EQ 사용",
+                c.eq(),
+                on -> {
+                    AudioSettings.put("eq", on);
+                    refreshHeadroom();
+                });
+        LinearLayout modes = new LinearLayout(activity);
+        modes.setPadding(dp(4), dp(4), dp(4), dp(4));
+        modes.setBackground(Ui.flatSurface(activity, Ui.SURFACE, 16));
+        modes.addView(
+                Ui.segment(
+                        activity, "7밴드", c.eqMode().equals("graphic"), () -> switchEq("graphic")),
+                new LinearLayout.LayoutParams(0, dp(40), 1));
+        modes.addView(
+                Ui.segment(
+                        activity,
+                        "파라메트릭",
+                        !c.eqMode().equals("graphic"),
+                        () -> switchEq("parametric")),
+                new LinearLayout.LayoutParams(0, dp(40), 1));
+        LinearLayout.LayoutParams modeParams = new LinearLayout.LayoutParams(-1, -2);
+        modeParams.topMargin = dp(12);
+        root.addView(modes, modeParams);
+        graphPanel = Ui.card(activity, 12);
+        graphPanel.setTag("eqPanel");
+        LinearLayout heading = new LinearLayout(activity);
+        heading.setGravity(Gravity.CENTER_VERTICAL);
+        TextView label = Ui.text(activity, "주파수 응답", 12, ink),
+                range = Ui.text(activity, "20 Hz — 20 kHz", 10, muted);
+        heading.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
+        heading.addView(range);
+        heading.setPadding(dp(4), dp(2), dp(4), dp(2));
+        graphPanel.addView(heading);
+        graph = new EqGraph(activity);
+        graphPanel.addView(graph, new LinearLayout.LayoutParams(-1, dp(192)));
+        TextView legend = Ui.text(activity, "파란 선 · 전체 응답    점선 · 선택 밴드", 10, muted);
+        legend.setPadding(dp(4), 0, 0, dp(4));
+        graphPanel.addView(legend);
+        root.addView(graphPanel);
+        if (c.eqMode().equals("graphic")) {
+            graphicBars.clear();
+            LinearLayout faders = new LinearLayout(activity);
+            faders.setPadding(0, dp(12), 0, 0);
+            for (int i = 0; i < 7; i++) {
+                final int index = i;
+                var current = c.bands().get(i);
+                String frequency =
+                        current.frequency() < 1000
+                                ? String.format(Locale.ROOT, "%.0f", current.frequency())
+                                : String.format(Locale.ROOT, "%.1fk", current.frequency() / 1000);
+                LinearLayout column = new LinearLayout(activity);
+                column.setOrientation(LinearLayout.VERTICAL);
+                column.setGravity(Gravity.CENTER_HORIZONTAL);
+                TextView value =
+                        Ui.text(
+                                activity,
+                                String.format(Locale.ROOT, "%+.1f", current.gain()),
+                                11,
+                                mint);
+                value.setGravity(Gravity.CENTER);
+                column.addView(value, new LinearLayout.LayoutParams(-1, dp(22)));
+                FrameLayout track = new FrameLayout(activity);
+                track.setClipChildren(false);
+                track.setClipToPadding(false);
+                SeekBar bar = new SeekBar(activity);
+                Ui.tint(bar);
+                bar.setMinimumHeight(0);
+                bar.setRotation(-90);
+                bar.setMax(1000);
+                bar.setProgress((int) Math.round((current.gain() + 12) / 24 * 1000));
+                bar.setContentDescription(
+                        String.format(Locale.ROOT, "%.0f Hz 게인", current.frequency()));
+                bar.setTag("graphicBand" + i);
+                FrameLayout.LayoutParams faderParams =
+                        new FrameLayout.LayoutParams(dp(140), dp(44), Gravity.CENTER);
+                track.addView(bar, faderParams);
+                column.addView(track, new LinearLayout.LayoutParams(-1, dp(140)));
+                TextView name = Ui.text(activity, frequency, 10, muted);
+                name.setGravity(Gravity.CENTER);
+                column.addView(name, new LinearLayout.LayoutParams(-1, dp(28)));
+                faders.addView(column, new LinearLayout.LayoutParams(0, -2, 1));
+                bar.setOnTouchListener(
+                        (view, event) -> {
+                            if (event.getActionMasked() == MotionEvent.ACTION_DOWN)
+                                view.getParent().requestDisallowInterceptTouchEvent(true);
+                            else if (event.getActionMasked() == MotionEvent.ACTION_UP
+                                    || event.getActionMasked() == MotionEvent.ACTION_CANCEL)
+                                view.getParent().requestDisallowInterceptTouchEvent(false);
+                            return false;
+                        });
+                bar.setOnSeekBarChangeListener(
+                        new SeekBar.OnSeekBarChangeListener() {
+                            public void onProgressChanged(SeekBar b, int progress, boolean user) {
+                                double gain = -12 + 24 * progress / 1000.;
+                                value.setText(String.format(Locale.ROOT, "%+.1f", gain));
+                                androidx.core.view.ViewCompat.setStateDescription(
+                                        b, String.format(Locale.ROOT, "%+.1f dB", gain));
+                                if (user) {
+                                    var before = AudioSettings.current.bands().get(index);
+                                    AudioSettings.band(
+                                            index,
+                                            new AudioSettings.Band(
+                                                    before.frequency(), gain, 1, "peak"));
+                                    graph.selection(index);
+                                    refreshHeadroom();
+                                }
+                            }
+
+                            public void onStartTrackingTouch(SeekBar b) {}
+
+                            public void onStopTrackingTouch(SeekBar b) {}
+                        });
+                graphicBars.add(bar);
+            }
+            graphPanel.addView(faders);
+            graph.onSelect(this::selectGraphicBand);
+        } else {
+            String[] names = new String[c.bands().size()];
+            for (int i = 0; i < names.length; i++) names[i] = "밴드 " + (i + 1);
+            LinearLayout selection = new LinearLayout(activity),
+                    bandHost = new LinearLayout(activity);
+            bandHost.setOrientation(LinearLayout.VERTICAL);
+            filterHost = new LinearLayout(activity);
+            filterHost.setOrientation(LinearLayout.VERTICAL);
+            LinearLayout.LayoutParams left = new LinearLayout.LayoutParams(0, -2, 1);
+            left.rightMargin = dp(8);
+            selection.addView(bandHost, left);
+            selection.addView(filterHost, new LinearLayout.LayoutParams(0, -2, 1));
+            graphPanel.addView(selection);
+            bandSelector =
+                    select(
+                            bandHost,
+                            "밴드 선택",
+                            names,
+                            band,
+                            i -> {
+                                band = i;
+                                editor();
+                            });
+            editor = new LinearLayout(activity);
+            editor.setOrientation(LinearLayout.VERTICAL);
+            graphPanel.addView(editor);
+            graph.onSelect(
+                    i -> {
+                        boolean changed = band != i;
+                        band = i;
+                        if (bandSelector != null) bandSelector.setText("밴드 " + (i + 1) + "  ⌄");
+                        if (changed) editor();
+                        else syncEditor();
+                        refreshHeadroom();
+                    });
+            editor();
+        }
+        LinearLayout auto = Ui.card(activity, 16);
+        var compensation =
+                Ui.toggle(
+                        activity,
+                        "자동 프리앰프 보정",
+                        c.autoEqPreamp(),
+                        on -> {
+                            AudioSettings.put("autoEqPreamp", on);
+                            refreshHeadroom();
+                        });
+        compensation.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+        compensation.setPadding(0, 0, 0, dp(4));
+        compensation.setMinHeight(dp(44));
+        auto.addView(compensation, new LinearLayout.LayoutParams(-1, -2));
+        headroom = Ui.text(activity, "", 21, mint);
+        headroom.setTag("eqHeadroom");
+        headroom.setPadding(0, dp(10), 0, dp(6));
+        auto.addView(headroom);
+        headroomDetail = Ui.text(activity, "", 11, muted);
+        auto.addView(headroomDetail);
+        slider(
+                auto,
+                "수동 프리앰프 dB",
+                -24,
+                6,
+                c.preamp(),
+                value -> {
+                    AudioSettings.put("preamp", value);
+                    refreshHeadroom();
+                });
+        root.addView(auto);
+        hint("자동 보정은 필터의 최대 증폭과 1 dB 여유를 반영합니다. 수동 설정은 보존됩니다. 그래프는 필터 응답이며 기기를 측정한 값이 아닙니다.");
+        button(
+                "현재 EQ 평탄하게",
+                () -> {
+                    for (int i = 0; i < AudioSettings.current.bands().size(); i++) {
+                        var before = AudioSettings.current.bands().get(i);
+                        AudioSettings.band(
+                                i,
+                                new AudioSettings.Band(
+                                        before.frequency(), 0, before.q(), before.type()));
+                    }
+                    navigate.accept("eq");
+                });
+        refreshHeadroom();
     }
-    private void switchEq(String mode){if(!AudioSettings.current.eqMode().equals(mode)){AudioSettings.put("eqMode",mode);navigate.accept("eq");}}
-    private void refreshHeadroom(){if(graph!=null){graph.setAlpha(AudioSettings.current.eq()?1:.55f);graph.invalidate();}if(headroom!=null){var c=AudioSettings.current;double applied=EqHeadroom.appliedPreamp(c,PcmSink.outputRate);headroom.setText(String.format(Locale.ROOT,"적용 %+.1f dB",applied));headroomDetail.setText(String.format(Locale.ROOT,"수동 %+.1f dB   ·   자동 %+.1f dB",c.preamp(),applied-c.preamp()));}}
-    private void editor(){editor.removeAllViews();filterHost.removeAllViews();graph.selection(band);var b=AudioSettings.current.bands().get(band);select(filterHost,"필터 종류",new String[]{"피킹 / 벨","로우 셸프","하이 셸프","하이패스","로우패스"},List.of("peak","low","high","highpass","lowpass").indexOf(b.type()),i->change("type",i));frequencyBar=slider(editor,"주파수 Hz",Math.log(20),Math.log(20000),Math.log(b.frequency()),v->change("frequency",Math.exp(v)));LinearLayout pair=new LinearLayout(activity),gain=new LinearLayout(activity),q=new LinearLayout(activity);gain.setOrientation(LinearLayout.VERTICAL);q.setOrientation(LinearLayout.VERTICAL);LinearLayout.LayoutParams first=new LinearLayout.LayoutParams(0,-2,1);first.rightMargin=dp(12);pair.addView(gain,first);pair.addView(q,new LinearLayout.LayoutParams(0,-2,1));editor.addView(pair);gainBar=slider(gain,"게인 dB",-12,12,b.gain(),v->change("gain",v));qBar=slider(q,"Q",.2,10,b.q(),v->change("q",v));details=Ui.text(activity,"",11,muted);syncEditor();}
-    private void syncEditor(){var b=AudioSettings.current.bands().get(band);if(frequencyBar!=null)frequencyBar.setProgress((int)Math.round((Math.log(b.frequency())-Math.log(20))/Math.log(1000)*1000));if(gainBar!=null)gainBar.setProgress((int)Math.round((b.gain()+12)/24*1000));if(qBar!=null)qBar.setProgress((int)Math.round((b.q()-.2)/9.8*1000));if(details!=null)details.setText(String.format(Locale.ROOT,"%.0f Hz · %+.1f dB · Q %.2f",b.frequency(),b.gain(),b.q()));}
-    private void change(String key,double value){var b=AudioSettings.current.bands().get(band);AudioSettings.band(band,new AudioSettings.Band(key.equals("frequency")?value:b.frequency(),key.equals("gain")?value:b.gain(),key.equals("q")?value:b.q(),key.equals("type")?new String[]{"peak","low","high","highpass","lowpass"}[(int)value]:b.type()));refreshHeadroom();}
+
+    private void selectGraphicBand(int index) {
+        graph.selection(index);
+        for (int at = 0; at < graphicBars.size(); at++) {
+            double gain = AudioSettings.current.bands().get(at).gain();
+            int progress = (int) Math.round((gain + 12) / 24 * 1000);
+            graphicBars.get(at).setProgress(progress);
+        }
+        refreshHeadroom();
+    }
+
+    private void switchEq(String mode) {
+        if (!AudioSettings.current.eqMode().equals(mode)) {
+            AudioSettings.put("eqMode", mode);
+            navigate.accept("eq");
+        }
+    }
+
+    private void refreshHeadroom() {
+        if (graph != null) {
+            graph.setAlpha(AudioSettings.current.eq() ? 1 : .55f);
+            graph.invalidate();
+        }
+        if (headroom != null) {
+            var c = AudioSettings.current;
+            double applied = EqHeadroom.appliedPreamp(c, PcmSink.outputRate);
+            headroom.setText(String.format(Locale.ROOT, "적용 %+.1f dB", applied));
+            headroomDetail.setText(
+                    String.format(
+                            Locale.ROOT,
+                            "수동 %+.1f dB   ·   자동 %+.1f dB",
+                            c.preamp(),
+                            applied - c.preamp()));
+        }
+    }
+
+    private void editor() {
+        editor.removeAllViews();
+        filterHost.removeAllViews();
+        graph.selection(band);
+        var b = AudioSettings.current.bands().get(band);
+        select(
+                filterHost,
+                "필터 종류",
+                new String[] {"피킹 / 벨", "로우 셸프", "하이 셸프", "하이패스", "로우패스"},
+                List.of("peak", "low", "high", "highpass", "lowpass").indexOf(b.type()),
+                i -> change("type", i));
+        frequencyBar =
+                slider(
+                        editor,
+                        "주파수 Hz",
+                        Math.log(20),
+                        Math.log(20000),
+                        Math.log(b.frequency()),
+                        v -> change("frequency", Math.exp(v)));
+        LinearLayout pair = new LinearLayout(activity),
+                gain = new LinearLayout(activity),
+                q = new LinearLayout(activity);
+        gain.setOrientation(LinearLayout.VERTICAL);
+        q.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams first = new LinearLayout.LayoutParams(0, -2, 1);
+        first.rightMargin = dp(12);
+        pair.addView(gain, first);
+        pair.addView(q, new LinearLayout.LayoutParams(0, -2, 1));
+        editor.addView(pair);
+        gainBar = slider(gain, "게인 dB", -12, 12, b.gain(), v -> change("gain", v));
+        qBar = slider(q, "Q", .2, 10, b.q(), v -> change("q", v));
+        details = Ui.text(activity, "", 11, muted);
+        syncEditor();
+    }
+
+    private void syncEditor() {
+        var b = AudioSettings.current.bands().get(band);
+        if (frequencyBar != null)
+            frequencyBar.setProgress(
+                    (int)
+                            Math.round(
+                                    (Math.log(b.frequency()) - Math.log(20))
+                                            / Math.log(1000)
+                                            * 1000));
+        if (gainBar != null) gainBar.setProgress((int) Math.round((b.gain() + 12) / 24 * 1000));
+        if (qBar != null) qBar.setProgress((int) Math.round((b.q() - .2) / 9.8 * 1000));
+        if (details != null)
+            details.setText(
+                    String.format(
+                            Locale.ROOT,
+                            "%.0f Hz · %+.1f dB · Q %.2f",
+                            b.frequency(),
+                            b.gain(),
+                            b.q()));
+    }
+
+    private void change(String key, double value) {
+        var b = AudioSettings.current.bands().get(band);
+        AudioSettings.band(
+                band,
+                new AudioSettings.Band(
+                        key.equals("frequency") ? value : b.frequency(),
+                        key.equals("gain") ? value : b.gain(),
+                        key.equals("q") ? value : b.q(),
+                        key.equals("type")
+                                ? new String[] {"peak", "low", "high", "highpass", "lowpass"}
+                                        [(int) value]
+                                : b.type()));
+        refreshHeadroom();
+    }
 }

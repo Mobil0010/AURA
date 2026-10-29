@@ -19,4 +19,4 @@
 #define PLATFORM_POSIX 1
 #define OS_LINUX 1
 #define _GNU_SOURCE 1
-#define PRINTF_FORMAT(a,b) __attribute__((format(printf,a,b)))
+#define PRINTF_FORMAT(a, b) __attribute__((format(printf, a, b)))

@@ -1,1 +1,3 @@
-<resources><string name="widget_description">앨범아트와 음악 재생을 홈 화면에서 확인합니다.</string></resources>
+<resources>
+    <string name="widget_description">앨범아트와 음악 재생을 홈 화면에서 확인합니다.</string>
+</resources>

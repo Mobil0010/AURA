@@ -1,45 +1,409 @@
 package dev.aura.player;
 
-import android.app.*;import android.content.*;import android.os.*;import android.widget.*;import android.view.*;
+import android.app.*;
+import android.content.*;
+import android.os.*;
+import android.widget.*;
+import android.view.*;
 import com.google.android.gms.auth.api.identity.*;
 import com.google.android.gms.common.api.ApiException;
-import java.util.*;import java.util.concurrent.*;
+import java.util.*;
+import java.util.concurrent.*;
 
 /** Account consent, folder browsing and source management. No tokens in views, saved state or logs. */
 final class DriveUi implements AutoCloseable {
-    private static final int AUTHORIZE=81;
-    private final MainActivity activity;private final Runnable changed,redraw;private final java.util.function.BooleanSupplier visible;
-    private final ExecutorService worker=Executors.newSingleThreadExecutor();
-    private final ArrayDeque<DriveLibrary.Folder> parents=new ArrayDeque<>();private DriveLibrary.Folder folder=new DriveLibrary.Folder("root","내 드라이브");
-    private List<DriveApi.Item> folders;private String error="";private boolean loading,connecting,closed;private int request;
-    DriveUi(MainActivity a,Runnable changed,Runnable redraw,java.util.function.BooleanSupplier visible){activity=a;this.changed=changed;this.redraw=redraw;this.visible=visible;}
-    private void main(Runnable r){activity.runOnUiThread(()->{if(!closed&&!activity.isDestroyed())r.run();});}
-    private void update(){if(visible.getAsBoolean())redraw.run();}
-    private TextView text(String s,int size,int color){return Ui.text(activity,s,size,color);}
-    private TextView button(String s,Runnable click,boolean primary){return Ui.button(activity,s,click,primary);}
-    private void section(LinearLayout body,String s){TextView t=text(s,16,Ui.MINT);t.setPadding(0,Ui.dp(activity,22),0,Ui.dp(activity,10));body.addView(t);}
-    void show(LinearLayout body){body.addView(text("Google Drive",28,Ui.INK));DriveAuth auth=DriveAuth.get(activity);
-        if(!auth.connected()){body.addView(text("Drive 음악 폴더를 연결하면 기기 음악과 함께 재생할 수 있습니다. 음원은 필요한 구간만 읽으며 별도 파일로 저장하지 않습니다.",14,Ui.MUTED));body.addView(button(connecting?"연결 중…":"Google 계정 연결",this::connect,true));body.addView(text("음악 폴더를 찾아 읽기 위해 Drive 파일 읽기 권한을 요청합니다. 원본 파일을 수정하거나 삭제하지 않습니다.",12,Ui.MUTED));if(!error.isEmpty())body.addView(text(error,14,Ui.ERROR));return;}
-        body.addView(text(auth.display()+"\n"+auth.email(),14,Ui.MUTED));body.addView(button("Google 권한 다시 확인",this::connect,false));body.addView(button("계정 연결 해제",()->new AlertDialog.Builder(activity).setTitle("Google Drive 연결 해제").setMessage("앱에 등록된 Drive 폴더와 곡 정보·표지를 지웁니다. Drive 원본 파일과 기기 음악은 유지됩니다.").setPositiveButton("연결 해제",(d,w)->disconnect()).setNegativeButton("취소",null).show(),false));
-        section(body,"등록한 Drive 음악 폴더");List<DriveLibrary.Folder> selected=DriveLibrary.roots(activity);if(selected.isEmpty())body.addView(text("아래에서 음악 폴더를 열어 추가해 주세요.",13,Ui.MUTED));for(var root:selected)body.addView(button("☁  "+root.name()+"  · 제거",()->remove(root),false));body.addView(button(LibraryScanService.state.running()?"검색 중…":"Drive 음악 다시 검색",()->scan(),false));
-        section(body,"폴더 선택 · "+folder.name());if(!parents.isEmpty())body.addView(button("‹ 상위 폴더",()->{folder=parents.removeLast();folders=null;error="";loading=false;request++;update();},false));body.addView(button("이 폴더를 음악 폴더로 추가",()->add(folder),true));
-        if(!error.isEmpty()){body.addView(text(error,13,Ui.ERROR));body.addView(button("다시 불러오기",()->{error="";folders=null;loading=false;update();},false));}
-        if(folders==null&&!loading&&error.isEmpty())browse();if(loading)body.addView(text("Drive 폴더를 불러오고 있습니다…",14,Ui.MUTED));else if(folders!=null){if(folders.isEmpty())body.addView(text("하위 폴더가 없습니다.",14,Ui.MUTED));else list(body,folders);}
-        section(body,"스트리밍 안내");body.addView(text("기기 저장소와 Google Drive 곡을 라이브러리·플레이리스트에서 함께 사용할 수 있습니다.\n폴더 검색 중 곡 정보와 표지를 미리 읽습니다. 내장 표지가 없으면 같은 폴더의 cover·folder·front 등의 사진을 사용합니다. 정보가 없거나 읽지 못한 파일은 파일명으로 표시합니다. 메타데이터를 읽기 위해 파일 일부를 전송하며 인터넷 데이터가 사용됩니다.\n다음 Drive 곡의 앞부분을 메모리에 미리 불러와 곡 전환을 준비합니다.\n인터넷 연결이 필요합니다. Drive의 DSD·바로가기 파일과 Wi-Fi 캐스트는 현재 지원하지 않습니다.",12,Ui.MUTED));
+    private static final int AUTHORIZE = 81;
+    private final MainActivity activity;
+    private final Runnable changed, redraw;
+    private final java.util.function.BooleanSupplier visible;
+    private final ExecutorService worker = Executors.newSingleThreadExecutor();
+    private final ArrayDeque<DriveLibrary.Folder> parents = new ArrayDeque<>();
+    private DriveLibrary.Folder folder = new DriveLibrary.Folder("root", "내 드라이브");
+    private List<DriveApi.Item> folders;
+    private String error = "";
+    private boolean loading, connecting, closed;
+    private int request;
+
+    DriveUi(
+            MainActivity a,
+            Runnable changed,
+            Runnable redraw,
+            java.util.function.BooleanSupplier visible) {
+        activity = a;
+        this.changed = changed;
+        this.redraw = redraw;
+        this.visible = visible;
     }
-    private void list(LinearLayout body,List<DriveApi.Item> items){var list=Ui.scrollingList(activity);list.setLayoutManager(new androidx.recyclerview.widget.LinearLayoutManager(activity));list.setAdapter(new androidx.recyclerview.widget.RecyclerView.Adapter<Holder>(){public Holder onCreateViewHolder(ViewGroup parent,int type){var row=button("",()->{},false);var lp=new androidx.recyclerview.widget.RecyclerView.LayoutParams(-1,-2);lp.topMargin=Ui.dp(activity,10);row.setLayoutParams(lp);return new Holder(row);}public void onBindViewHolder(Holder holder,int i){var f=items.get(i);holder.text.setText("▱  "+f.name()+"  ›");holder.text.setOnClickListener(v->{parents.addLast(folder);folder=new DriveLibrary.Folder(f.id(),f.name());folders=null;error="";loading=false;request++;update();});}public int getItemCount(){return items.size();}});body.addView(list,new LinearLayout.LayoutParams(-1,Ui.dp(activity,Math.min(360,Math.max(60,items.size()*58)))));}
-    private static class Holder extends androidx.recyclerview.widget.RecyclerView.ViewHolder{final TextView text;Holder(TextView text){super(text);this.text=text;}}
-    private void browse(){loading=true;int id=++request;String selected=folder.id();worker.execute(()->{try{var result=new DriveApi(new DriveHttp(DriveAuth.get(activity))).children(selected);List<DriveApi.Item> found=new ArrayList<>();for(var f:result)if(f.folder())found.add(f);main(()->{if(id!=request)return;folders=found;loading=false;update();});}catch(Exception e){main(()->{if(id!=request)return;loading=false;error=message(e);update();});}});}
-    private void connect(){if(connecting)return;connecting=true;error="";DriveAuth.get(activity).begin(activity,this::authorized,e->{connecting=false;error=authError(e);update();});update();}
-    private void authorized(AuthorizationResult result){if(result.hasResolution()){try{activity.startIntentSenderForResult(result.getPendingIntent().getIntentSender(),AUTHORIZE,null,0,0,0);}catch(Exception e){connecting=false;error="Google 로그인 화면을 열지 못했습니다.";update();}return;}
-        if(result.getAccessToken()==null||!result.getGrantedScopes().contains(DriveAuth.SCOPE)){connecting=false;error="Google Drive 파일 읽기 권한을 허용해 주세요.";update();return;}String token=result.getAccessToken();worker.execute(()->{try{DriveHttp http=new DriveHttp(new DriveHttp.Tokens(){public String token(){return token;}public void invalidate(String ignored){}});var user=new DriveApi(http).account();if(user==null)throw new java.io.IOException("Google 계정 정보를 확인하지 못했습니다.");DriveAuth.get(activity).accept(user.optString("permissionId"),user.optString("emailAddress"),user.optString("displayName"),token);main(()->{connecting=false;error="";folder=new DriveLibrary.Folder("root","내 드라이브");folders=null;parents.clear();changed.run();update();});}catch(Exception e){main(()->{connecting=false;error=message(e);update();});}});
+
+    private void main(Runnable r) {
+        activity.runOnUiThread(
+                () -> {
+                    if (!closed && !activity.isDestroyed()) r.run();
+                });
     }
-    boolean result(int code,int status,Intent data){if(code!=AUTHORIZE)return false;if(status!=Activity.RESULT_OK||data==null){connecting=false;error="Google Drive 연결을 취소했습니다.";update();return true;}try{authorized(Identity.getAuthorizationClient(activity).getAuthorizationResultFromIntent(data));}catch(Exception e){connecting=false;error=authError(e);update();}return true;}
-    private void add(DriveLibrary.Folder root){if(LibraryScanService.state.running()){activity.toast("검색이 끝난 뒤 폴더를 변경해 주세요.");return;}var roots=DriveLibrary.roots(activity);if(roots.stream().noneMatch(f->f.id().equals(root.id())))roots.add(root);DriveLibrary.saveRoots(activity,roots);scan();}
-    private void remove(DriveLibrary.Folder root){if(LibraryScanService.state.running()){activity.toast("검색을 취소한 뒤 폴더를 변경해 주세요.");return;}new AlertDialog.Builder(activity).setMessage(root.name()+" 폴더를 앱에서 제거하시겠습니까? 원본 파일은 유지됩니다.").setPositiveButton("제거",(d,w)->{var roots=DriveLibrary.roots(activity);roots.remove(root);DriveLibrary.saveRoots(activity,roots);if(roots.isEmpty()){synchronized(DriveLibrary.LOCK){new java.io.File(activity.getFilesDir(),"drive-library.json").delete();}changed.run();update();}else scan();}).setNegativeButton("취소",null).show();}
-    private void scan(){if(DriveLibrary.roots(activity).isEmpty()){activity.toast("음악 폴더를 먼저 추가해 주세요.");return;}activity.scanDrive();update();}
-    private void disconnect(){connecting=true;DriveAuth.get(activity).disconnect(success->main(()->{connecting=false;folders=null;parents.clear();error=success?"":"이 기기 연결은 해제했습니다. Google 계정의 앱 권한 설정에서도 연결 상태를 확인해 주세요.";changed.run();update();}));activity.removeDriveQueue();changed.run();update();}
-    private static String message(Exception e){return e instanceof java.io.IOException&&e.getMessage()!=null?e.getMessage():"Google Drive를 불러오지 못했습니다. 연결 상태와 읽기 권한을 확인해 주세요.";}
-    private static String authError(Exception e){if(e instanceof ApiException a&&a.getStatusCode()==10)return "Google 로그인 앱 등록이 완료되지 않았습니다. 앱 개발 설정을 확인해야 합니다.";return "Google 계정을 연결하지 못했습니다. Google Play 서비스와 앱의 로그인 등록 상태를 확인해 주세요.";}
-    @Override public void close(){closed=true;request++;worker.shutdownNow();}
+
+    private void update() {
+        if (visible.getAsBoolean()) redraw.run();
+    }
+
+    private TextView text(String s, int size, int color) {
+        return Ui.text(activity, s, size, color);
+    }
+
+    private TextView button(String s, Runnable click, boolean primary) {
+        return Ui.button(activity, s, click, primary);
+    }
+
+    private void section(LinearLayout body, String s) {
+        TextView t = text(s, 16, Ui.MINT);
+        t.setPadding(0, Ui.dp(activity, 22), 0, Ui.dp(activity, 10));
+        body.addView(t);
+    }
+
+    void show(LinearLayout body) {
+        body.addView(text("Google Drive", 28, Ui.INK));
+        DriveAuth auth = DriveAuth.get(activity);
+        if (!auth.connected()) {
+            body.addView(
+                    text(
+                            "Drive 음악 폴더를 연결하면 기기 음악과 함께 재생할 수 있습니다. 음원은 필요한 구간만 읽으며 별도 파일로 저장하지 않습니다.",
+                            14,
+                            Ui.MUTED));
+            body.addView(button(connecting ? "연결 중…" : "Google 계정 연결", this::connect, true));
+            body.addView(
+                    text(
+                            "음악 폴더를 찾아 읽기 위해 Drive 파일 읽기 권한을 요청합니다. 원본 파일을 수정하거나 삭제하지 않습니다.",
+                            12,
+                            Ui.MUTED));
+            if (!error.isEmpty()) body.addView(text(error, 14, Ui.ERROR));
+            return;
+        }
+        body.addView(text(auth.display() + "\n" + auth.email(), 14, Ui.MUTED));
+        body.addView(button("Google 권한 다시 확인", this::connect, false));
+        body.addView(
+                button(
+                        "계정 연결 해제",
+                        () ->
+                                new AlertDialog.Builder(activity)
+                                        .setTitle("Google Drive 연결 해제")
+                                        .setMessage(
+                                                "앱에 등록된 Drive 폴더와 곡 정보·표지를 지웁니다. Drive 원본 파일과 기기 음악은 유지됩니다.")
+                                        .setPositiveButton("연결 해제", (d, w) -> disconnect())
+                                        .setNegativeButton("취소", null)
+                                        .show(),
+                        false));
+        section(body, "등록한 Drive 음악 폴더");
+        List<DriveLibrary.Folder> selected = DriveLibrary.roots(activity);
+        if (selected.isEmpty()) body.addView(text("아래에서 음악 폴더를 열어 추가해 주세요.", 13, Ui.MUTED));
+        for (var root : selected)
+            body.addView(button("☁  " + root.name() + "  · 제거", () -> remove(root), false));
+        body.addView(
+                button(
+                        LibraryScanService.state.running() ? "검색 중…" : "Drive 음악 다시 검색",
+                        () -> scan(),
+                        false));
+        section(body, "폴더 선택 · " + folder.name());
+        if (!parents.isEmpty())
+            body.addView(
+                    button(
+                            "‹ 상위 폴더",
+                            () -> {
+                                folder = parents.removeLast();
+                                folders = null;
+                                error = "";
+                                loading = false;
+                                request++;
+                                update();
+                            },
+                            false));
+        body.addView(button("이 폴더를 음악 폴더로 추가", () -> add(folder), true));
+        if (!error.isEmpty()) {
+            body.addView(text(error, 13, Ui.ERROR));
+            body.addView(
+                    button(
+                            "다시 불러오기",
+                            () -> {
+                                error = "";
+                                folders = null;
+                                loading = false;
+                                update();
+                            },
+                            false));
+        }
+        if (folders == null && !loading && error.isEmpty()) browse();
+        if (loading) body.addView(text("Drive 폴더를 불러오고 있습니다…", 14, Ui.MUTED));
+        else if (folders != null) {
+            if (folders.isEmpty()) body.addView(text("하위 폴더가 없습니다.", 14, Ui.MUTED));
+            else list(body, folders);
+        }
+        section(body, "스트리밍 안내");
+        body.addView(
+                text(
+                        "기기 저장소와 Google Drive 곡을 라이브러리·플레이리스트에서 함께 사용할 수 있습니다.\n폴더 검색 중 곡 정보와 표지를 미리 읽습니다. 내장 표지가 없으면 같은 폴더의 cover·folder·front 등의 사진을 사용합니다. 정보가 없거나 읽지 못한 파일은 파일명으로 표시합니다. 메타데이터를 읽기 위해 파일 일부를 전송하며 인터넷 데이터가 사용됩니다.\n다음 Drive 곡의 앞부분을 메모리에 미리 불러와 곡 전환을 준비합니다.\n인터넷 연결이 필요합니다. Drive의 DSD·바로가기 파일과 Wi-Fi 캐스트는 현재 지원하지 않습니다.",
+                        12,
+                        Ui.MUTED));
+    }
+
+    private void list(LinearLayout body, List<DriveApi.Item> items) {
+        var list = Ui.scrollingList(activity);
+        list.setLayoutManager(new androidx.recyclerview.widget.LinearLayoutManager(activity));
+        list.setAdapter(
+                new androidx.recyclerview.widget.RecyclerView.Adapter<Holder>() {
+                    public Holder onCreateViewHolder(ViewGroup parent, int type) {
+                        var row = button("", () -> {}, false);
+                        var lp = new androidx.recyclerview.widget.RecyclerView.LayoutParams(-1, -2);
+                        lp.topMargin = Ui.dp(activity, 10);
+                        row.setLayoutParams(lp);
+                        return new Holder(row);
+                    }
+
+                    public void onBindViewHolder(Holder holder, int i) {
+                        var f = items.get(i);
+                        holder.text.setText("▱  " + f.name() + "  ›");
+                        holder.text.setOnClickListener(
+                                v -> {
+                                    parents.addLast(folder);
+                                    folder = new DriveLibrary.Folder(f.id(), f.name());
+                                    folders = null;
+                                    error = "";
+                                    loading = false;
+                                    request++;
+                                    update();
+                                });
+                    }
+
+                    public int getItemCount() {
+                        return items.size();
+                    }
+                });
+        body.addView(
+                list,
+                new LinearLayout.LayoutParams(
+                        -1, Ui.dp(activity, Math.min(360, Math.max(60, items.size() * 58)))));
+    }
+
+    private static class Holder extends androidx.recyclerview.widget.RecyclerView.ViewHolder {
+        final TextView text;
+
+        Holder(TextView text) {
+            super(text);
+            this.text = text;
+        }
+    }
+
+    private void browse() {
+        loading = true;
+        int id = ++request;
+        String selected = folder.id();
+        worker.execute(
+                () -> {
+                    try {
+                        var result =
+                                new DriveApi(new DriveHttp(DriveAuth.get(activity)))
+                                        .children(selected);
+                        List<DriveApi.Item> found = new ArrayList<>();
+                        for (var f : result) if (f.folder()) found.add(f);
+                        main(
+                                () -> {
+                                    if (id != request) return;
+                                    folders = found;
+                                    loading = false;
+                                    update();
+                                });
+                    } catch (Exception e) {
+                        main(
+                                () -> {
+                                    if (id != request) return;
+                                    loading = false;
+                                    error = message(e);
+                                    update();
+                                });
+                    }
+                });
+    }
+
+    private void connect() {
+        if (connecting) return;
+        connecting = true;
+        error = "";
+        DriveAuth.get(activity)
+                .begin(
+                        activity,
+                        this::authorized,
+                        e -> {
+                            connecting = false;
+                            error = authError(e);
+                            update();
+                        });
+        update();
+    }
+
+    private void authorized(AuthorizationResult result) {
+        if (result.hasResolution()) {
+            try {
+                activity.startIntentSenderForResult(
+                        result.getPendingIntent().getIntentSender(), AUTHORIZE, null, 0, 0, 0);
+            } catch (Exception e) {
+                connecting = false;
+                error = "Google 로그인 화면을 열지 못했습니다.";
+                update();
+            }
+            return;
+        }
+        if (result.getAccessToken() == null
+                || !result.getGrantedScopes().contains(DriveAuth.SCOPE)) {
+            connecting = false;
+            error = "Google Drive 파일 읽기 권한을 허용해 주세요.";
+            update();
+            return;
+        }
+        String token = result.getAccessToken();
+        worker.execute(
+                () -> {
+                    try {
+                        DriveHttp http =
+                                new DriveHttp(
+                                        new DriveHttp.Tokens() {
+                                            public String token() {
+                                                return token;
+                                            }
+
+                                            public void invalidate(String ignored) {}
+                                        });
+                        var user = new DriveApi(http).account();
+                        if (user == null)
+                            throw new java.io.IOException("Google 계정 정보를 확인하지 못했습니다.");
+                        DriveAuth.get(activity)
+                                .accept(
+                                        user.optString("permissionId"),
+                                        user.optString("emailAddress"),
+                                        user.optString("displayName"),
+                                        token);
+                        main(
+                                () -> {
+                                    connecting = false;
+                                    error = "";
+                                    folder = new DriveLibrary.Folder("root", "내 드라이브");
+                                    folders = null;
+                                    parents.clear();
+                                    changed.run();
+                                    update();
+                                });
+                    } catch (Exception e) {
+                        main(
+                                () -> {
+                                    connecting = false;
+                                    error = message(e);
+                                    update();
+                                });
+                    }
+                });
+    }
+
+    boolean result(int code, int status, Intent data) {
+        if (code != AUTHORIZE) return false;
+        if (status != Activity.RESULT_OK || data == null) {
+            connecting = false;
+            error = "Google Drive 연결을 취소했습니다.";
+            update();
+            return true;
+        }
+        try {
+            authorized(
+                    Identity.getAuthorizationClient(activity)
+                            .getAuthorizationResultFromIntent(data));
+        } catch (Exception e) {
+            connecting = false;
+            error = authError(e);
+            update();
+        }
+        return true;
+    }
+
+    private void add(DriveLibrary.Folder root) {
+        if (LibraryScanService.state.running()) {
+            activity.toast("검색이 끝난 뒤 폴더를 변경해 주세요.");
+            return;
+        }
+        var roots = DriveLibrary.roots(activity);
+        if (roots.stream().noneMatch(f -> f.id().equals(root.id()))) roots.add(root);
+        DriveLibrary.saveRoots(activity, roots);
+        scan();
+    }
+
+    private void remove(DriveLibrary.Folder root) {
+        if (LibraryScanService.state.running()) {
+            activity.toast("검색을 취소한 뒤 폴더를 변경해 주세요.");
+            return;
+        }
+        new AlertDialog.Builder(activity)
+                .setMessage(root.name() + " 폴더를 앱에서 제거하시겠습니까? 원본 파일은 유지됩니다.")
+                .setPositiveButton(
+                        "제거",
+                        (d, w) -> {
+                            var roots = DriveLibrary.roots(activity);
+                            roots.remove(root);
+                            DriveLibrary.saveRoots(activity, roots);
+                            if (roots.isEmpty()) {
+                                synchronized (DriveLibrary.LOCK) {
+                                    new java.io.File(activity.getFilesDir(), "drive-library.json")
+                                            .delete();
+                                }
+                                changed.run();
+                                update();
+                            } else scan();
+                        })
+                .setNegativeButton("취소", null)
+                .show();
+    }
+
+    private void scan() {
+        if (DriveLibrary.roots(activity).isEmpty()) {
+            activity.toast("음악 폴더를 먼저 추가해 주세요.");
+            return;
+        }
+        activity.scanDrive();
+        update();
+    }
+
+    private void disconnect() {
+        connecting = true;
+        DriveAuth.get(activity)
+                .disconnect(
+                        success ->
+                                main(
+                                        () -> {
+                                            connecting = false;
+                                            folders = null;
+                                            parents.clear();
+                                            error =
+                                                    success
+                                                            ? ""
+                                                            : "이 기기 연결은 해제했습니다. Google 계정의 앱 권한 설정에서도 연결 상태를 확인해 주세요.";
+                                            changed.run();
+                                            update();
+                                        }));
+        activity.removeDriveQueue();
+        changed.run();
+        update();
+    }
+
+    private static String message(Exception e) {
+        return e instanceof java.io.IOException && e.getMessage() != null
+                ? e.getMessage()
+                : "Google Drive를 불러오지 못했습니다. 연결 상태와 읽기 권한을 확인해 주세요.";
+    }
+
+    private static String authError(Exception e) {
+        if (e instanceof ApiException a && a.getStatusCode() == 10)
+            return "Google 로그인 앱 등록이 완료되지 않았습니다. 앱 개발 설정을 확인해야 합니다.";
+        return "Google 계정을 연결하지 못했습니다. Google Play 서비스와 앱의 로그인 등록 상태를 확인해 주세요.";
+    }
+
+    @Override
+    public void close() {
+        closed = true;
+        request++;
+        worker.shutdownNow();
+    }
 }

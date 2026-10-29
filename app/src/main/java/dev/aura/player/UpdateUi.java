@@ -11,21 +11,238 @@ import androidx.core.content.FileProvider;
 
 /** Lifecycle-bound updater controls. Only a foreground user action may launch installation. */
 final class UpdateUi {
-    private final Activity activity;private final AppUpdater updater;private final Handler handler=new Handler(Looper.getMainLooper());
-    private TextView banner,status,notes,action,check,cancel;private ProgressBar progress;private boolean active,installWhenReady,awaitingPermission;
-    UpdateUi(Activity a){activity=a;updater=AppUpdater.get(a);}
-    private final Runnable poll=new Runnable(){public void run(){if(!active)return;updater.refresh();paint();handler.postDelayed(this,800);}};
-    void resume(){active=true;if(awaitingPermission){awaitingPermission=false;installWhenReady=activity.getPackageManager().canRequestPackageInstalls();}updater.check(false);handler.removeCallbacks(poll);handler.post(poll);}
-    void pause(){active=false;handler.removeCallbacks(poll);}
-    void banner(LinearLayout body,Runnable open){banner=Ui.text(activity,"",13,Ui.MINT);banner.setPadding(Ui.dp(activity,16),Ui.dp(activity,13),Ui.dp(activity,16),Ui.dp(activity,13));banner.setBackground(Ui.surface(activity,Ui.SOFT,16));Ui.tap(banner,open);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=Ui.dp(activity,18);body.addView(banner,lp);paint();}
-    void screen(LinearLayout root){TextView title=Ui.text(activity,"앱 업데이트",28,Ui.INK);root.addView(title);TextView current=Ui.text(activity,"현재 버전 "+BuildConfig.VERSION_NAME,13,Ui.MUTED);current.setPadding(0,Ui.dp(activity,10),0,Ui.dp(activity,24));root.addView(current);status=Ui.text(activity,"",16,Ui.INK);status.setPadding(0,Ui.dp(activity,12),0,Ui.dp(activity,12));root.addView(status);progress=new ProgressBar(activity,null,android.R.attr.progressBarStyleHorizontal);progress.setProgressTintList(android.content.res.ColorStateList.valueOf(Ui.MINT));root.addView(progress,new LinearLayout.LayoutParams(-1,Ui.dp(activity,8)));notes=Ui.text(activity,"",14,Ui.MUTED);notes.setPadding(0,Ui.dp(activity,20),0,Ui.dp(activity,12));root.addView(notes);action=Ui.button(activity,"업데이트",this::perform,true);root.addView(action);cancel=Ui.button(activity,"다운로드 취소",()->{installWhenReady=false;updater.cancel();paint();},false);root.addView(cancel);check=Ui.button(activity,"업데이트 확인",()->{updater.check(true);paint();},false);root.addView(check);
-        androidx.appcompat.widget.SwitchCompat automatic=new androidx.appcompat.widget.SwitchCompat(activity);automatic.setText("앱을 열 때 자동 확인");automatic.setTextColor(Ui.INK);automatic.setTextSize(14);automatic.setPadding(0,Ui.dp(activity,22),0,Ui.dp(activity,18));automatic.setChecked(updater.automatic());automatic.setOnCheckedChangeListener((b,on)->updater.automatic(on));root.addView(automatic);TextView help=Ui.text(activity,"GitHub Releases · Mobil0010/AURA\n새 버전은 최대 6시간 간격으로 확인합니다. 수동 확인은 언제든 가능합니다.\n\n업데이트를 누르면 APK를 다운로드합니다. 파일과 앱 서명을 확인한 뒤 안드로이드 설치 화면을 엽니다. 마지막 설치 확인은 직접 눌러 주세요.",12,Ui.MUTED);root.addView(help);paint();}
-    private void perform(){AppUpdater.State state=updater.state();if(state.stage()==AppUpdater.Stage.READY){installWhenReady=true;install();}else if(state.release()!=null&&state.release().code()>BuildConfig.VERSION_CODE){installWhenReady=true;updater.download();paint();}}
-    private void paint(){AppUpdater.State s=updater.state();boolean available=s.release()!=null&&s.release().code()>BuildConfig.VERSION_CODE;String label=switch(s.stage()){case CHECKING->"업데이트를 확인하고 있습니다…";case CURRENT->"최신 버전을 사용하고 있습니다.";case AVAILABLE->"새 버전 "+s.release().name()+" 업데이트가 있습니다.";case DOWNLOADING->"업데이트 다운로드 중 · "+(s.release().size()>0?Math.min(100,s.bytes()*100/s.release().size()):0)+"%";case VERIFYING->"다운로드한 파일과 서명을 확인하고 있습니다…";case READY->"업데이트 설치 준비가 완료되었습니다.";case ERROR->s.message();case IDLE->s.message().isEmpty()?"업데이트를 확인해 주세요.":s.message();};
-        if(banner!=null&&banner.isAttachedToWindow()){banner.setVisibility(available?View.VISIBLE:View.GONE);banner.setText(s.stage()==AppUpdater.Stage.READY?"업데이트 설치 준비 완료  ›":"새 버전 "+(s.release()==null?"":s.release().name())+" 업데이트  ›");}
-        if(status!=null&&status.isAttachedToWindow()){status.setText(label+(s.message().isEmpty()||s.stage()==AppUpdater.Stage.ERROR?"":"\n"+s.message()));boolean working=s.stage()==AppUpdater.Stage.CHECKING||s.stage()==AppUpdater.Stage.DOWNLOADING||s.stage()==AppUpdater.Stage.VERIFYING;progress.setVisibility(working?View.VISIBLE:View.GONE);progress.setIndeterminate(s.stage()!=AppUpdater.Stage.DOWNLOADING);if(!progress.isIndeterminate()){progress.setMax(100);progress.setProgress((int)Math.min(100,s.bytes()*100/Math.max(1,s.release().size())));}notes.setText(available?s.release().notes():"");action.setVisibility(available&&!working?View.VISIBLE:View.GONE);action.setText(s.stage()==AppUpdater.Stage.READY?"업데이트 설치":"업데이트 · "+String.format(java.util.Locale.ROOT,"%.1f MB",s.release()==null?0:s.release().size()/1048576.));cancel.setVisibility(s.stage()==AppUpdater.Stage.DOWNLOADING?View.VISIBLE:View.GONE);check.setEnabled(!working);check.setAlpha(working?.45f:1);}
-        if(active&&installWhenReady&&s.stage()==AppUpdater.Stage.READY)install();if(s.stage()==AppUpdater.Stage.ERROR)installWhenReady=false;
+    private final Activity activity;
+    private final AppUpdater updater;
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private TextView banner, status, notes, action, check, cancel;
+    private ProgressBar progress;
+    private boolean active, installWhenReady, awaitingPermission;
+
+    UpdateUi(Activity a) {
+        activity = a;
+        updater = AppUpdater.get(a);
     }
-    Intent installIntent(){Uri uri=FileProvider.getUriForFile(activity,activity.getPackageName()+".updates",updater.file());Intent intent=new Intent(Intent.ACTION_VIEW).setDataAndType(uri,"application/vnd.android.package-archive").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);intent.setClipData(ClipData.newRawUri("AURA APK",uri));return intent;}
-    private void install(){if(!active||updater.state().stage()!=AppUpdater.Stage.READY)return;installWhenReady=false;try{if(!activity.getPackageManager().canRequestPackageInstalls()){new androidx.appcompat.app.AlertDialog.Builder(activity).setTitle("업데이트 설치 허용").setMessage("안드로이드 설정에서 AURA의 ‘이 앱에서 설치 허용’을 켜 주세요. 설정을 마치고 돌아오면 설치 화면이 열립니다.").setPositiveButton("설정 열기",(d,w)->{try{awaitingPermission=true;activity.startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:"+activity.getPackageName())));}catch(ActivityNotFoundException e){awaitingPermission=false;Toast.makeText(activity,"앱 설치 권한 설정을 열 수 없습니다.",Toast.LENGTH_LONG).show();}}).setNegativeButton("취소",null).show();return;}activity.startActivity(installIntent());}catch(Exception e){Toast.makeText(activity,"설치 화면을 열 수 없습니다. "+e.getMessage(),Toast.LENGTH_LONG).show();}}
+
+    private final Runnable poll =
+            new Runnable() {
+                public void run() {
+                    if (!active) return;
+                    updater.refresh();
+                    paint();
+                    handler.postDelayed(this, 800);
+                }
+            };
+
+    void resume() {
+        active = true;
+        if (awaitingPermission) {
+            awaitingPermission = false;
+            installWhenReady = activity.getPackageManager().canRequestPackageInstalls();
+        }
+        updater.check(false);
+        handler.removeCallbacks(poll);
+        handler.post(poll);
+    }
+
+    void pause() {
+        active = false;
+        handler.removeCallbacks(poll);
+    }
+
+    void banner(LinearLayout body, Runnable open) {
+        banner = Ui.text(activity, "", 13, Ui.MINT);
+        banner.setPadding(
+                Ui.dp(activity, 16), Ui.dp(activity, 13), Ui.dp(activity, 16), Ui.dp(activity, 13));
+        banner.setBackground(Ui.surface(activity, Ui.SOFT, 16));
+        Ui.tap(banner, open);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.bottomMargin = Ui.dp(activity, 18);
+        body.addView(banner, lp);
+        paint();
+    }
+
+    void screen(LinearLayout root) {
+        TextView title = Ui.text(activity, "앱 업데이트", 28, Ui.INK);
+        root.addView(title);
+        TextView current = Ui.text(activity, "현재 버전 " + BuildConfig.VERSION_NAME, 13, Ui.MUTED);
+        current.setPadding(0, Ui.dp(activity, 10), 0, Ui.dp(activity, 24));
+        root.addView(current);
+        status = Ui.text(activity, "", 16, Ui.INK);
+        status.setPadding(0, Ui.dp(activity, 12), 0, Ui.dp(activity, 12));
+        root.addView(status);
+        progress = new ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal);
+        progress.setProgressTintList(android.content.res.ColorStateList.valueOf(Ui.MINT));
+        root.addView(progress, new LinearLayout.LayoutParams(-1, Ui.dp(activity, 8)));
+        notes = Ui.text(activity, "", 14, Ui.MUTED);
+        notes.setPadding(0, Ui.dp(activity, 20), 0, Ui.dp(activity, 12));
+        root.addView(notes);
+        action = Ui.button(activity, "업데이트", this::perform, true);
+        root.addView(action);
+        cancel =
+                Ui.button(
+                        activity,
+                        "다운로드 취소",
+                        () -> {
+                            installWhenReady = false;
+                            updater.cancel();
+                            paint();
+                        },
+                        false);
+        root.addView(cancel);
+        check =
+                Ui.button(
+                        activity,
+                        "업데이트 확인",
+                        () -> {
+                            updater.check(true);
+                            paint();
+                        },
+                        false);
+        root.addView(check);
+        androidx.appcompat.widget.SwitchCompat automatic =
+                new androidx.appcompat.widget.SwitchCompat(activity);
+        automatic.setText("앱을 열 때 자동 확인");
+        automatic.setTextColor(Ui.INK);
+        automatic.setTextSize(14);
+        automatic.setPadding(0, Ui.dp(activity, 22), 0, Ui.dp(activity, 18));
+        automatic.setChecked(updater.automatic());
+        automatic.setOnCheckedChangeListener((b, on) -> updater.automatic(on));
+        root.addView(automatic);
+        TextView help =
+                Ui.text(
+                        activity,
+                        "GitHub Releases · Mobil0010/AURA\n새 버전은 최대 6시간 간격으로 확인합니다. 수동 확인은 언제든 가능합니다.\n\n업데이트를 누르면 APK를 다운로드합니다. 파일과 앱 서명을 확인한 뒤 안드로이드 설치 화면을 엽니다. 마지막 설치 확인은 직접 눌러 주세요.",
+                        12,
+                        Ui.MUTED);
+        root.addView(help);
+        paint();
+    }
+
+    private void perform() {
+        AppUpdater.State state = updater.state();
+        if (state.stage() == AppUpdater.Stage.READY) {
+            installWhenReady = true;
+            install();
+        } else if (state.release() != null && state.release().code() > BuildConfig.VERSION_CODE) {
+            installWhenReady = true;
+            updater.download();
+            paint();
+        }
+    }
+
+    private void paint() {
+        AppUpdater.State s = updater.state();
+        boolean available = s.release() != null && s.release().code() > BuildConfig.VERSION_CODE;
+        String label =
+                switch (s.stage()) {
+                    case CHECKING -> "업데이트를 확인하고 있습니다…";
+                    case CURRENT -> "최신 버전을 사용하고 있습니다.";
+                    case AVAILABLE -> "새 버전 " + s.release().name() + " 업데이트가 있습니다.";
+                    case DOWNLOADING ->
+                            "업데이트 다운로드 중 · "
+                                    + (s.release().size() > 0
+                                            ? Math.min(100, s.bytes() * 100 / s.release().size())
+                                            : 0)
+                                    + "%";
+                    case VERIFYING -> "다운로드한 파일과 서명을 확인하고 있습니다…";
+                    case READY -> "업데이트 설치 준비가 완료되었습니다.";
+                    case ERROR -> s.message();
+                    case IDLE -> s.message().isEmpty() ? "업데이트를 확인해 주세요." : s.message();
+                };
+        if (banner != null && banner.isAttachedToWindow()) {
+            banner.setVisibility(available ? View.VISIBLE : View.GONE);
+            banner.setText(
+                    s.stage() == AppUpdater.Stage.READY
+                            ? "업데이트 설치 준비 완료  ›"
+                            : "새 버전 "
+                                    + (s.release() == null ? "" : s.release().name())
+                                    + " 업데이트  ›");
+        }
+        if (status != null && status.isAttachedToWindow()) {
+            status.setText(
+                    label
+                            + (s.message().isEmpty() || s.stage() == AppUpdater.Stage.ERROR
+                                    ? ""
+                                    : "\n" + s.message()));
+            boolean working =
+                    s.stage() == AppUpdater.Stage.CHECKING
+                            || s.stage() == AppUpdater.Stage.DOWNLOADING
+                            || s.stage() == AppUpdater.Stage.VERIFYING;
+            progress.setVisibility(working ? View.VISIBLE : View.GONE);
+            progress.setIndeterminate(s.stage() != AppUpdater.Stage.DOWNLOADING);
+            if (!progress.isIndeterminate()) {
+                progress.setMax(100);
+                progress.setProgress(
+                        (int) Math.min(100, s.bytes() * 100 / Math.max(1, s.release().size())));
+            }
+            notes.setText(available ? s.release().notes() : "");
+            action.setVisibility(available && !working ? View.VISIBLE : View.GONE);
+            action.setText(
+                    s.stage() == AppUpdater.Stage.READY
+                            ? "업데이트 설치"
+                            : "업데이트 · "
+                                    + String.format(
+                                            java.util.Locale.ROOT,
+                                            "%.1f MB",
+                                            s.release() == null
+                                                    ? 0
+                                                    : s.release().size() / 1048576.));
+            cancel.setVisibility(
+                    s.stage() == AppUpdater.Stage.DOWNLOADING ? View.VISIBLE : View.GONE);
+            check.setEnabled(!working);
+            check.setAlpha(working ? .45f : 1);
+        }
+        if (active && installWhenReady && s.stage() == AppUpdater.Stage.READY) install();
+        if (s.stage() == AppUpdater.Stage.ERROR) installWhenReady = false;
+    }
+
+    Intent installIntent() {
+        Uri uri =
+                FileProvider.getUriForFile(
+                        activity, activity.getPackageName() + ".updates", updater.file());
+        Intent intent =
+                new Intent(Intent.ACTION_VIEW)
+                        .setDataAndType(uri, "application/vnd.android.package-archive")
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        intent.setClipData(ClipData.newRawUri("AURA APK", uri));
+        return intent;
+    }
+
+    private void install() {
+        if (!active || updater.state().stage() != AppUpdater.Stage.READY) {
+            return;
+        }
+        installWhenReady = false;
+        try {
+            if (!activity.getPackageManager().canRequestPackageInstalls()) {
+                showInstallPermissionDialog();
+                return;
+            }
+            activity.startActivity(installIntent());
+        } catch (Exception e) {
+            Toast.makeText(activity, "설치 화면을 열 수 없습니다. " + e.getMessage(), Toast.LENGTH_LONG)
+                    .show();
+        }
+    }
+
+    private void showInstallPermissionDialog() {
+        new androidx.appcompat.app.AlertDialog.Builder(activity)
+                .setTitle("업데이트 설치 허용")
+                .setMessage("안드로이드 설정에서 AURA의 ‘이 앱에서 설치 허용’을 켜 주세요. 설정을 마치고 돌아오면 설치 화면이 열립니다.")
+                .setPositiveButton("설정 열기", (dialog, which) -> openInstallPermissionSettings())
+                .setNegativeButton("취소", null)
+                .show();
+    }
+
+    private void openInstallPermissionSettings() {
+        try {
+            awaitingPermission = true;
+            Uri packageUri = Uri.parse("package:" + activity.getPackageName());
+            Intent settings = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, packageUri);
+            activity.startActivity(settings);
+        } catch (ActivityNotFoundException e) {
+            awaitingPermission = false;
+            Toast.makeText(activity, "앱 설치 권한 설정을 열 수 없습니다.", Toast.LENGTH_LONG).show();
+        }
+    }
 }

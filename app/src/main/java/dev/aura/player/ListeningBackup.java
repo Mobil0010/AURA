@@ -1,31 +1,244 @@
 package dev.aura.player;
-import android.content.*;import android.database.Cursor;import org.json.*;import java.io.*;import java.util.*;
+
+import android.content.*;
+import android.database.Cursor;
+import org.json.*;
+import java.io.*;
+import java.util.*;
+
 /** User-selected JSON backup. Never exports Drive tokens, grants, credentials or audio files. */
 final class ListeningBackup {
- static final String[] STORES={"aura","audio","playback","music"};static final int MAX=24*1024*1024;
- static boolean allowed(String store,String key){if(store.equals("aura"))return Set.of("playlists","appearance","karaoke","lyricOffset","trackSort","trackSortDescending","lastTrack","lastPosition").contains(key);if(store.equals("playback"))return key.startsWith("soundProfile:")||Set.of("pauseUsbAttach","pauseUsbDetach","autoProfiles").contains(key);if(store.equals("audio"))return !Set.of("mode","device","perfect","dsd").contains(key);return Set.of("favorites","hidden","mixes","offline-quota","offline-clean","sleep-fade","autoProfiles").contains(key)||key.startsWith("bookmarks:")||key.startsWith("lyric-offset:")||key.startsWith("soundProfile:");}
- static JSONObject export(Context c)throws Exception{
-  JSONObject root=new JSONObject().put("format","AURA-backup").put("version",1),stores=new JSONObject();
-  for(String store:STORES){JSONObject rows=new JSONObject();for(var e:c.getSharedPreferences(store,0).getAll().entrySet())if(allowed(store,e.getKey())){Object v=e.getValue();rows.put(e.getKey(),new JSONObject().put("type",v instanceof Set?"set":v instanceof Long?"long":v instanceof Integer?"int":v instanceof Float?"float":v instanceof Boolean?"boolean":"string").put("value",v instanceof Set?new JSONArray((Set<?>)v):v));}stores.put(store,rows);}root.put("preferences",stores);
-  JSONArray heard=new JSONArray();var d=ListeningStore.get(c).getReadableDatabase();try(Cursor q=d.rawQuery("SELECT * FROM heard LIMIT 100001",null)){if(q.getCount()>100000)throw new IOException("통계가 현재 백업 한도를 초과했습니다.");while(q.moveToNext()){JSONObject row=new JSONObject();for(int i=0;i<q.getColumnCount();i++)row.put(q.getColumnName(i),q.getType(i)==Cursor.FIELD_TYPE_INTEGER?q.getLong(i):q.getString(i));heard.put(row);}}root.put("listening",heard);
-  JSONArray added=new JSONArray();try(MusicCollections m=new MusicCollections(c);Cursor q=m.getReadableDatabase().rawQuery("SELECT uri,stamp FROM added",null)){while(q.moveToNext())added.put(new JSONObject().put("uri",q.getString(0)).put("stamp",q.getLong(1)));}JSONArray inventory=new JSONArray();for(Track t:new Library(c).load())inventory.put(t.json());return root.put("added",added).put("tracks",inventory);
- }
- static void validate(String store,String key,Object v)throws Exception{
-  boolean ok;if(store.equals("audio")){if(Set.of("rate","bits","buffer","quality").contains(key))ok=v instanceof Integer;else if(Set.of("sox","eq","limiter","autoEqPreamp").contains(key))ok=v instanceof Boolean;else if(Set.of("bands","graphicGains","dither","eqMode","replayGain").contains(key)||key.startsWith("profile:"))ok=v instanceof String;else ok=v instanceof Number;}
-  else if(store.equals("aura"))ok=Set.of("karaoke","trackSortDescending").contains(key)?v instanceof Boolean:key.equals("lyricOffset")||key.equals("lastPosition")?v instanceof Long:v instanceof String;
-  else if(store.equals("playback"))ok=key.startsWith("soundProfile:")?v instanceof String:v instanceof Boolean;
-  else ok=Set.of("favorites","hidden").contains(key)?v instanceof Set:Set.of("offline-clean","sleep-fade","autoProfiles").contains(key)?v instanceof Boolean:key.equals("offline-quota")||key.startsWith("lyric-offset:")?v instanceof Long:v instanceof String;
-  if(!ok||v instanceof Number&&!Double.isFinite(((Number)v).doubleValue()))throw new IOException("백업 설정 형식이 올바르지 않습니다.");
-  if(key.equals("playlists"))new JSONObject((String)v);if(Set.of("bands","graphicGains","mixes").contains(key)||key.startsWith("bookmarks:"))new JSONArray((String)v);
- }
- static void restore(Context c,InputStream in)throws Exception{
-  byte[] bytes=DriveHttp.read(in,MAX);JSONObject root=new JSONObject(new String(bytes,java.nio.charset.StandardCharsets.UTF_8));if(!root.optString("format").equals("AURA-backup")||root.optInt("version")!=1)throw new IOException("지원하지 않는 백업 파일입니다.");JSONObject stores=root.getJSONObject("preferences");JSONArray heard=root.getJSONArray("listening"),added=root.optJSONArray("added");if(heard.length()>100000)throw new IOException("통계 항목이 너무 많습니다.");
-  // Validate all values before any writes; account permissions and paths are never granted by a backup.
-  Map<String,Map<String,Object>> staged=new LinkedHashMap<>();for(String name:STORES){Map<String,Object> entries=new LinkedHashMap<>();JSONObject rows=stores.optJSONObject(name);if(rows!=null)for(var it=rows.keys();it.hasNext();){String key=it.next();if(!allowed(name,key))continue;JSONObject item=rows.getJSONObject(key);Object v=switch(item.getString("type")){case "set"->{JSONArray a=item.getJSONArray("value");Set<String> set=new HashSet<>();for(int i=0;i<a.length();i++)set.add(a.getString(i));yield set;}case "long"->item.getLong("value");case "int"->item.getInt("value");case "float"->(float)item.getDouble("value");case "boolean"->item.getBoolean("value");case "string"->item.getString("value");default->throw new IOException("백업 값 형식이 올바르지 않습니다.");};validate(name,key,v);entries.put(key,v);}staged.put(name,entries);}
-  List<ContentValues> records=new ArrayList<>();for(int i=0;i<heard.length();i++){JSONObject r=heard.getJSONObject(i);ContentValues v=new ContentValues();for(String k:List.of("visit","uri","title","artist","album","genre","source"))v.put(k,r.getString(k));for(String k:List.of("minute","ms","plays","first","last")){long n=r.getLong(k);if(n<0)throw new IOException("통계 값이 올바르지 않습니다.");v.put(k,n);}records.add(v);}
-  if(added!=null)for(int i=0;i<added.length();i++){JSONObject r=added.getJSONObject(i);r.getString("uri");if(r.getLong("stamp")<0)throw new IOException("추가 날짜가 올바르지 않습니다.");}JSONArray inventoryCheck=root.optJSONArray("tracks");if(inventoryCheck!=null)for(int i=0;i<inventoryCheck.length();i++)Track.from(inventoryCheck.getJSONObject(i));
-  var db=ListeningStore.get(c).getWritableDatabase();db.beginTransaction();try{for(ContentValues v:records)db.insertWithOnConflict("heard",null,v,android.database.sqlite.SQLiteDatabase.CONFLICT_REPLACE);db.setTransactionSuccessful();}finally{db.endTransaction();}
-  if(added!=null)try(MusicCollections m=new MusicCollections(c)){var d=m.getWritableDatabase();d.beginTransaction();try{for(int i=0;i<added.length();i++){JSONObject a=added.getJSONObject(i);d.execSQL("INSERT OR IGNORE INTO added VALUES(?,?)",new Object[]{a.getString("uri"),a.getLong("stamp")});}d.setTransactionSuccessful();}finally{d.endTransaction();}}
-  for(var store:staged.entrySet()){var edit=c.getSharedPreferences(store.getKey(),0).edit();for(var e:store.getValue().entrySet()){Object v=e.getValue();String k=e.getKey();if(v instanceof Set)edit.putStringSet(k,(Set<String>)v);else if(v instanceof Long)edit.putLong(k,(Long)v);else if(v instanceof Integer)edit.putInt(k,(Integer)v);else if(v instanceof Float)edit.putFloat(k,(Float)v);else if(v instanceof Boolean)edit.putBoolean(k,(Boolean)v);else edit.putString(k,(String)v);}edit.commit();}AudioSettings.init(c);JSONArray inventory=root.optJSONArray("tracks");if(inventory!=null){MusicCollections.prefs(c).edit().putString("pending-links",inventory.toString()).commit();BackupLinks.apply(c,new Library(c).load());}
- }
+    static final String[] STORES = {"aura", "audio", "playback", "music"};
+    static final int MAX = 24 * 1024 * 1024;
+
+    static boolean allowed(String store, String key) {
+        if (store.equals("aura"))
+            return Set.of(
+                            "playlists",
+                            "appearance",
+                            "karaoke",
+                            "lyricOffset",
+                            "trackSort",
+                            "trackSortDescending",
+                            "lastTrack",
+                            "lastPosition")
+                    .contains(key);
+        if (store.equals("playback"))
+            return key.startsWith("soundProfile:")
+                    || Set.of("pauseUsbAttach", "pauseUsbDetach", "autoProfiles").contains(key);
+        if (store.equals("audio")) return !Set.of("mode", "device", "perfect", "dsd").contains(key);
+        return Set.of(
+                                "favorites",
+                                "hidden",
+                                "mixes",
+                                "offline-quota",
+                                "offline-clean",
+                                "sleep-fade",
+                                "autoProfiles")
+                        .contains(key)
+                || key.startsWith("bookmarks:")
+                || key.startsWith("lyric-offset:")
+                || key.startsWith("soundProfile:");
+    }
+
+    private static String preferenceType(Object value) {
+        if (value instanceof Set) return "set";
+        if (value instanceof Long) return "long";
+        if (value instanceof Integer) return "int";
+        if (value instanceof Float) return "float";
+        if (value instanceof Boolean) return "boolean";
+        return "string";
+    }
+
+    static JSONObject export(Context c) throws Exception {
+        JSONObject root = new JSONObject().put("format", "AURA-backup").put("version", 1),
+                stores = new JSONObject();
+        for (String store : STORES) {
+            JSONObject rows = new JSONObject();
+            for (var e : c.getSharedPreferences(store, 0).getAll().entrySet())
+                if (allowed(store, e.getKey())) {
+                    Object v = e.getValue();
+                    Object value = v instanceof Set ? new JSONArray((Set<?>) v) : v;
+                    JSONObject stored =
+                            new JSONObject().put("type", preferenceType(v)).put("value", value);
+                    rows.put(e.getKey(), stored);
+                }
+            stores.put(store, rows);
+        }
+        root.put("preferences", stores);
+        JSONArray heard = new JSONArray();
+        var d = ListeningStore.get(c).getReadableDatabase();
+        try (Cursor q = d.rawQuery("SELECT * FROM heard LIMIT 100001", null)) {
+            if (q.getCount() > 100000) throw new IOException("통계가 현재 백업 한도를 초과했습니다.");
+            while (q.moveToNext()) {
+                JSONObject row = new JSONObject();
+                for (int i = 0; i < q.getColumnCount(); i++)
+                    row.put(
+                            q.getColumnName(i),
+                            q.getType(i) == Cursor.FIELD_TYPE_INTEGER
+                                    ? q.getLong(i)
+                                    : q.getString(i));
+                heard.put(row);
+            }
+        }
+        root.put("listening", heard);
+        JSONArray added = new JSONArray();
+        try (MusicCollections m = new MusicCollections(c);
+                Cursor q = m.getReadableDatabase().rawQuery("SELECT uri,stamp FROM added", null)) {
+            while (q.moveToNext())
+                added.put(new JSONObject().put("uri", q.getString(0)).put("stamp", q.getLong(1)));
+        }
+        JSONArray inventory = new JSONArray();
+        for (Track t : new Library(c).load()) inventory.put(t.json());
+        return root.put("added", added).put("tracks", inventory);
+    }
+
+    static void validate(String store, String key, Object v) throws Exception {
+        boolean ok;
+        if (store.equals("audio")) {
+            if (Set.of("rate", "bits", "buffer", "quality").contains(key))
+                ok = v instanceof Integer;
+            else if (Set.of("sox", "eq", "limiter", "autoEqPreamp").contains(key))
+                ok = v instanceof Boolean;
+            else if (Set.of("bands", "graphicGains", "dither", "eqMode", "replayGain").contains(key)
+                    || key.startsWith("profile:")) ok = v instanceof String;
+            else ok = v instanceof Number;
+        } else if (store.equals("aura"))
+            ok =
+                    Set.of("karaoke", "trackSortDescending").contains(key)
+                            ? v instanceof Boolean
+                            : key.equals("lyricOffset") || key.equals("lastPosition")
+                                    ? v instanceof Long
+                                    : v instanceof String;
+        else if (store.equals("playback"))
+            ok = key.startsWith("soundProfile:") ? v instanceof String : v instanceof Boolean;
+        else
+            ok =
+                    Set.of("favorites", "hidden").contains(key)
+                            ? v instanceof Set
+                            : Set.of("offline-clean", "sleep-fade", "autoProfiles").contains(key)
+                                    ? v instanceof Boolean
+                                    : key.equals("offline-quota") || key.startsWith("lyric-offset:")
+                                            ? v instanceof Long
+                                            : v instanceof String;
+        if (!ok || v instanceof Number && !Double.isFinite(((Number) v).doubleValue()))
+            throw new IOException("백업 설정 형식이 올바르지 않습니다.");
+        if (key.equals("playlists")) new JSONObject((String) v);
+        if (Set.of("bands", "graphicGains", "mixes").contains(key) || key.startsWith("bookmarks:"))
+            new JSONArray((String) v);
+    }
+
+    static void restore(Context c, InputStream in) throws Exception {
+        byte[] bytes = DriveHttp.read(in, MAX);
+        JSONObject root =
+                new JSONObject(new String(bytes, java.nio.charset.StandardCharsets.UTF_8));
+        if (!root.optString("format").equals("AURA-backup") || root.optInt("version") != 1)
+            throw new IOException("지원하지 않는 백업 파일입니다.");
+        JSONObject stores = root.getJSONObject("preferences");
+        JSONArray heard = root.getJSONArray("listening"), added = root.optJSONArray("added");
+        if (heard.length() > 100000) throw new IOException("통계 항목이 너무 많습니다.");
+        // Validate all values before any writes; account permissions and paths are never granted by
+        // a backup.
+        Map<String, Map<String, Object>> staged = new LinkedHashMap<>();
+        for (String name : STORES) {
+            Map<String, Object> entries = new LinkedHashMap<>();
+            JSONObject rows = stores.optJSONObject(name);
+            if (rows != null)
+                for (var it = rows.keys(); it.hasNext(); ) {
+                    String key = it.next();
+                    if (!allowed(name, key)) continue;
+                    JSONObject item = rows.getJSONObject(key);
+                    Object v =
+                            switch (item.getString("type")) {
+                                case "set" -> {
+                                    JSONArray a = item.getJSONArray("value");
+                                    Set<String> set = new HashSet<>();
+                                    for (int i = 0; i < a.length(); i++) set.add(a.getString(i));
+                                    yield set;
+                                }
+                                case "long" -> item.getLong("value");
+                                case "int" -> item.getInt("value");
+                                case "float" -> (float) item.getDouble("value");
+                                case "boolean" -> item.getBoolean("value");
+                                case "string" -> item.getString("value");
+                                default -> throw new IOException("백업 값 형식이 올바르지 않습니다.");
+                            };
+                    validate(name, key, v);
+                    entries.put(key, v);
+                }
+            staged.put(name, entries);
+        }
+        List<ContentValues> records = new ArrayList<>();
+        for (int i = 0; i < heard.length(); i++) {
+            JSONObject r = heard.getJSONObject(i);
+            ContentValues v = new ContentValues();
+            for (String k : List.of("visit", "uri", "title", "artist", "album", "genre", "source"))
+                v.put(k, r.getString(k));
+            for (String k : List.of("minute", "ms", "plays", "first", "last")) {
+                long n = r.getLong(k);
+                if (n < 0) throw new IOException("통계 값이 올바르지 않습니다.");
+                v.put(k, n);
+            }
+            records.add(v);
+        }
+        if (added != null)
+            for (int i = 0; i < added.length(); i++) {
+                JSONObject r = added.getJSONObject(i);
+                r.getString("uri");
+                if (r.getLong("stamp") < 0) throw new IOException("추가 날짜가 올바르지 않습니다.");
+            }
+        JSONArray inventoryCheck = root.optJSONArray("tracks");
+        if (inventoryCheck != null)
+            for (int i = 0; i < inventoryCheck.length(); i++)
+                Track.from(inventoryCheck.getJSONObject(i));
+        var db = ListeningStore.get(c).getWritableDatabase();
+        db.beginTransaction();
+        try {
+            for (ContentValues v : records)
+                db.insertWithOnConflict(
+                        "heard", null, v, android.database.sqlite.SQLiteDatabase.CONFLICT_REPLACE);
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
+        if (added != null)
+            try (MusicCollections m = new MusicCollections(c)) {
+                var d = m.getWritableDatabase();
+                d.beginTransaction();
+                try {
+                    for (int i = 0; i < added.length(); i++) {
+                        JSONObject a = added.getJSONObject(i);
+                        d.execSQL(
+                                "INSERT OR IGNORE INTO added VALUES(?,?)",
+                                new Object[] {a.getString("uri"), a.getLong("stamp")});
+                    }
+                    d.setTransactionSuccessful();
+                } finally {
+                    d.endTransaction();
+                }
+            }
+        for (var store : staged.entrySet()) {
+            var edit = c.getSharedPreferences(store.getKey(), 0).edit();
+            for (var e : store.getValue().entrySet()) {
+                Object v = e.getValue();
+                String k = e.getKey();
+                if (v instanceof Set) edit.putStringSet(k, (Set<String>) v);
+                else if (v instanceof Long) edit.putLong(k, (Long) v);
+                else if (v instanceof Integer) edit.putInt(k, (Integer) v);
+                else if (v instanceof Float) edit.putFloat(k, (Float) v);
+                else if (v instanceof Boolean) edit.putBoolean(k, (Boolean) v);
+                else edit.putString(k, (String) v);
+            }
+            edit.commit();
+        }
+        AudioSettings.init(c);
+        JSONArray inventory = root.optJSONArray("tracks");
+        if (inventory != null) {
+            MusicCollections.prefs(c)
+                    .edit()
+                    .putString("pending-links", inventory.toString())
+                    .commit();
+            BackupLinks.apply(c, new Library(c).load());
+        }
+    }
 }

@@ -1,4 +1,75 @@
-# 2026-10-28 · USB DAC 볼륨 팝업 (미배포)
+# 2026-10-29 · 전체 코드 가독성 정리 (미배포)
+
+앱/테스트 Java 133개, 직접 관리하는 C/C++ 9개, Python 5개, Android XML 18개, Gradle 3개, CMake/PowerShell/shell 각 1개, 총 171개 파일을 정리했다. 외부 vendor 원본·Gradle wrapper·생성물은 제외했다. 기존 작업 소스와 기능은 유지하고 0.20.1/code27 개발 후보를 공개 배포하지 않았다. 스타일 규칙과 도구 버전은 [CODE_STYLE.md](CODE_STYLE.md)를 참고한다.
+
+- 기존 소스를 별도 로컬 스냅샷으로 보존했다. Python AST, XML 요소/속성/텍스트, PowerShell 토큰을 비교해 동일함을 확인했다. Java 133개와 C/C++·Python·XML·CMake의 포매터 재검사도 통과했다.
+- 정리 직전 빌드와 비교해 디버그 정보를 제거한 앱 Java 클래스 209개의 바이트코드가 모두 같았다. 네 ABI 네이티브 라이브러리 8개의 실행 .text 섹션도 동일했다. 문자열 리터럴과 처리 순서는 바꾸지 않았다.
+- debug 앱/계측 APK 및 lintDebug 빌드 성공. lint 오류 0개/경고 88개. JVM 기본/가사 타이밍/원격 HTTP 40개 검사 통과. 로그 `.local/build-readability.log`, `.local/build-readability-tests.log`.
+- API36 x86_64에서 EngineTest·PlaybackStabilityTest·EqAndThemeTest·CodecNegotiationTest·DriveMetadataSpeedTest·DriveTest·IncrementalLibraryTest·DriveFolderArtworkTest·DriveArtworkPersistenceTest·TrackFormatTest 총 84개 중 80개 통과, 4개 실패. 전체 통과로 표현하지 않는다. 로그 `.local/test-readability.log`.
+- 실패: EngineTest.playerLayoutKeepsSinglePlaybackControls(재생 컨트롤 조회 null), largeLibraryRecyclesRows(RecyclerView 조회 null), embeddedArtworkIsDownsampledBeforeDecode(현재 2048px 정책과 다른 기존 512px 기대값), PlaybackStabilityTest.repeatedSeekPauseAndTrackChangesRemainStableWithHeapPressure(Source error). 마지막 검사는 앱 프로세스를 종료한 뒤 단독으로도 실패했다(`.local/test-readability-playback-isolated.log`). 이번 서식 정리에서 이 검사나 앱 동작을 바꿔 실패를 숨기지 않았다. 클래스/네이티브 실행 코드 비교는 통과했지만 실패 항목의 별도 원인 조사는 남아 있다.
+- MainActivity는 압축된 360줄에서 구문을 구분한 5,174줄로 정리됐다. 개발 APK SHA-256 `9a8a549e99947b063f02bd9e77f3455e559a3c428528aee70a87b265fd82cf82`. 공개 릴리스·업데이트 피드·서명 자료는 변경하지 않았다.
+
+---
+
+# 2026-10-29 · Drive 메타데이터 읽기 개선 (미배포)
+
+0.20.1/code27 개발 후보에서 FLAC 블록 직접 읽기, 작은 앞부분 16KiB 요청, 일반 기기 최대 4개 병렬 분석과 분석 완료 상태 재사용을 구현했다. 사용자 지시대로 공개 배포·업데이트 피드·배포 서명은 변경하지 않았다. 상세 동작과 큰 태그/표지 제한은 [DRIVE_METADATA_PERFORMANCE.md](DRIVE_METADATA_PERFORMANCE.md)를 참고한다.
+
+- debug 앱/계측 APK 빌드 및 lintDebug 성공. lint 오류 0개/경고 88개. 최종 증분 빌드 로그 `.local/build-drive-speed-final.log`, 테스트 초기화 보완 빌드 `.local/build-drive-speed-test-retry.log`.
+- API36 x86_64에서 DriveMetadataSpeedTest·DriveTest·IncrementalLibraryTest·DriveFolderArtworkTest·DriveArtworkPersistenceTest 총 35개 통과(9.255초). 실제 FLAC fixture 태그·트랙 번호·원본 형식·재생 시간·내장 앞표지를 확인했다. 잘린/손상된 태그, 거대 표지 건너뛰기와 작은 단위 readAt도 검사했다.
+- 64MiB 모의 HTTP 파일에 실제 FLAC 메타데이터를 넣은 검사에서 범위 요청 1회, 전송 16KiB 이하로 정보를 읽었다. 파일 크기는 인덱스에 알려진 상태이며 모든 파일/실제 네트워크에서 같은 요청 수나 속도를 보장하지 않는다. 그림이 큰 파일은 추가 구간이 필요하다.
+- 8곡 지연 모의 분석에서 동시 실행 최대 4개를 확인하고, 변경 없는 재검색에서 분석 호출이 증가하지 않았다. 기존 구간 스트리밍/탐색·계정 오류·전송 예산·증분 확인·폴더 표지·영구 표지 검사도 통과했다.
+- 첫 전체 실행은 35개 중 저장된 로컬 전용 필터를 초기화하지 않은 기존 혼합 폴더 UI 검사 1개가 실패했다. 검사에서 source/query/folderCursor를 초기화하도록 보완하고 앱 APK 변경 없이 35개 전체를 다시 통과했다. 로그 `.local/test-drive-speed.log`, `.local/test-drive-speed-final.log`.
+- debug APK SHA-256 `4e503f245087a3793e0a74dee4d0bef64fce9d8d097fa02dfc28aa71d332de58`. 실제 Google 계정·실물 기기에서 처리 시간의 전후 비교는 하지 않았다. release APK는 이번 작업에서 새로 빌드하지 않았다.
+
+---
+
+# 2026-10-29 · 목록 포맷·Hi-Res와 Drive 표지 보관 (미배포)
+
+사용자 요청으로 공개 배포를 보류했다. 버전은 기존 개발 후보 0.20.1/code27이며 공개 APK/피드/서명을 변경하지 않았다. 상세 동작과 한계는 [UI-FORMAT-DRIVE-ARTWORK-WIP.md](UI-FORMAT-DRIVE-ARTWORK-WIP.md)를 참고한다.
+
+- `tools/build-windows.ps1 -Variant Debug -AndroidTests`: debug 앱·계측 APK·lintDebug 성공. lint 오류 0개/경고 88개. 이번 변경의 release APK는 별도로 빌드하지 않았다.
+- API36 x86_64 에뮬레이터에서 TrackFormatTest, DriveArtworkPersistenceTest, ArtworkQualityTest, DriveFolderArtworkTest, IncrementalLibraryTest 총 21개 통과(15.39초). 실제 24bit/48kHz FLAC fixture의 헤더, 판정 경계·JSON 보존·불명 형식 숨김·행 재활용, 5개 곡 목록의 다크/라이트 위치를 검사했다. 영구 표지의 캐시/메모리 초기화 후 재사용, 이전 표지와 품질 표식 이전·정리, 기존 증분 검색의 음원 재열기 억제도 확인했다.
+- 실제 화면 캡처 10장: `screenshots/format-badges/`. 직접 만든 표지와 테스트 메타데이터를 사용했으며 일반 앱에 데모 곡을 넣지 않았다. 스마트폰 배치 검사 후 에뮬레이터 해상도/밀도를 원래 값으로 복원했다.
+- Drive 앨범아트는 cache/art에서 files/drive-art로 옮겨 OS의 일반 캐시 정리로 인한 소실을 줄인다. 실제 사용자 Drive 계정·실물 기기에서 장기 미사용 후 속도는 이번에 측정하지 않았다. 이미 사라진 표지를 네트워크 없이 복원할 수는 없다.
+- 기존 비트 깊이/샘플레이트 없는 FLAC은 폴더/전체 다시 검색 후 Hi-Res 판정이 보완된다. 시작 시 증분 확인에서 기존 Drive 음원을 일괄 다시 읽지 않는다.
+- 로그: `.local/build-format-console.log`, `.local/test-format-drive-final.log`. debug APK SHA-256: `404cf3a4939da89b6889794e400571ae17a970c650975073b870998de4fead79`.
+
+---
+
+# 2026-10-29 · Windows CMake 종료 원인 확인
+
+최소 Android C/C++ 프로젝트로 CMake 종료를 분리 재현했다. 소스와 출력 경로만 영문으로 지정해도 실행 작업 디렉터리가 한글이면 NDK 아카이버 검색 중 -1073740791로 종료됐다. CMake 3.31.8에서도 같은 현상이 발생해 버전 교체만으로는 해결되지 않았다. 동일한 CMake 3.22.1·NDK 27.2.12479018에서 작업 디렉터리까지 영문으로 바꾸자 구성과 C/C++ 컴파일러 ABI 검사가 성공했다.
+
+`tools/build-windows.ps1`은 빌드 입력만 영문 TEMP의 고유 폴더로 복사해 Gradle을 실행하고 APK와 lint 보고서를 원본 폴더로 복사한다. 원본 gradle.properties·오디오 코드·NDK/CMake 버전은 변경하지 않는다. 서명 개인 자료는 복사하지 않고 release APK에 배포 서명을 하지 않는다. 이전 실패 기록은 아래에 보존한다.
+
+- 새 스크립트 기본 실행으로 `:app:lintDebug :app:assembleDebug :app:assembleRelease` 성공(2분 18초, 111개 작업). 네 ABI의 Debug 및 RelWithDebInfo 네이티브 빌드를 모두 완료했다. lint 오류 0개/경고 88개, 기존 SoX CMake 정책/C99 및 Google 인증 라이브러리 D8 경고는 남아 있다.
+- 두 APK의 패키지 `dev.aura.player`, 0.20.1/code27, minSdk26/targetSdk36을 aapt로 확인했다. 각각 네 ABI에 libaura_audio.so·libsoxr.so 총 8개 라이브러리가 정확히 포함되어 있고 `zipalign -c -P 16 4` 검사를 통과했다.
+- debug APK는 `apksigner verify --verbose --print-certs` 성공(v2). 로컬 Android Debug 인증서 SHA-256은 `d7eecfcd3d617aa14f464f60ecb5cb5526e5ba4cee909cd05fb6b167803e50bd`이며 공개 배포 서명과 다르다. release APK는 debuggable이 아니며 미서명 상태다. 실기기 설치·재생 검사는 이번 작업에서 실행하지 않았다.
+- debug: `app/build/outputs/apk/debug/app-debug.apk`, 14,338,222바이트, SHA-256 `f503814b70a2b6612ab8bd97a49a817a486d3f6bfc62890506784b6500c62c89`.
+- release: `app/build/outputs/apk/release/app-release-unsigned.apk`, 10,503,524바이트, SHA-256 `15ec17eb26c6ce8b830576a7b2c594fed29b4a9c2f1feca9df090bf0904aad18`.
+- 로그: `.local/build-windows.log`. lint 보고서: `app/build/reports/lint-results-debug.html` 및 XML. 원본 gradle.properties는 변경하지 않았고 `git diff --check` 성공. 기존 서명 백업 부재로 공식 서명·GitHub 배포는 진행하지 않았다.
+
+---
+
+# 2026-10-29 · 문서·안내 코드 정리 / 0.20.1 후보
+
+현재 작업 소스는 0.20.1/code27 미배포 후보다. 구현된 기능을 미구현으로 표시하던 roadmap 화면과 라우팅 분기를 제거했다. 개발 현황·Drive·호환성·업데이트·서명 문서를 현재 구현에 맞추고 WIP 문서는 후속 배포 여부를 구분했다. 아래 날짜별 검사는 당시 결과이며 이번 후보에서 모두 재실행한 결과가 아니다.
+
+- 2026-10-29 GitHub Releases API에서 공개 최신 v0.20.0 및 공개 자산 목록을 확인했다. 공개 update-v2.json은 0.20.0/code26, update.json은 고정 전환용 0.18.1/code23을 반환했다. 이번에 공개 APK를 재다운로드하거나 서명을 다시 검증한 것은 아니다.
+- JDK의 `javac --release 17`로 기존 기본 검사 코드를 컴파일했다. CoreTest 11개, KaraokeTimingTest 8개, RemoteTest 21개, 총 40개 통과. RemoteTest는 로컬 소켓 접근 허용 후 실행했다.
+- Android Studio JBR와 로컬 Android SDK에서 `:app:compileDebugJavaWithJavac :app:lintDebug` 성공. lint XML 기준 오류 0개/경고 88개다. Java 코드 변경과 Android 정적 검사를 확인했다. 이는 네이티브 APK 빌드나 실제 화면 실행 검증을 대신하지 않는다.
+- 전체 debug APK 빌드를 시도했다. Windows 한글 프로젝트 경로 검사를 빌드 중에만 `android.overridePathCheck=true`로 해제한 뒤, `configureCMakeDebug[arm64-v8a]`에서 CMake 프로세스가 -1073740791로 종료됐다. 네이티브 빌드 실패 원인은 확정하지 않았다. 따라서 전체 APK 빌드·실행·계측 검사를 통과했다고 주장하지 않는다. 임시 Gradle 설정은 원복한다.
+- 수정 파일의 `git diff --check`를 통과했고 앱 Java/리소스에서 `roadmap` 및 오래된 미구현 안내가 남아 있지 않음을 검색으로 확인했다.
+- `.local/signing/`과 `.local/signing-migration/AURA-0.18.1-bridge.apk`가 이 체크아웃에 없어 서명·배포를 진행하지 않았다. 저장소 지침에 따라 기존 키·암호·lineage·동결 전환 APK 복원이 필요하다. 새 키를 생성하지 않았다.
+
+## 0.20.0 공개 상태와 아래 기록의 해석
+
+USB 볼륨 팝업은 이후 [v0.20.0](https://github.com/Mobil0010/AURA/releases/tag/v0.20.0)에 공개됐다. 아래 ‘미배포’는 2026-10-28 검사 당시 상태다. 0.19.0에 포함된 기능의 과거 미배포 표기도 같은 방식으로 해석한다. 당시 로그·검사 결과·실물 미검증 범위는 보존한다.
+
+---
+
+# 2026-10-28 · USB DAC 볼륨 팝업 (당시 미배포, 이후 0.20.0 포함)
 
 사용자 요청으로 배포를 보류했다. USB 직접 출력의 명시적 볼륨 조작(화면 슬라이더/물리 키/MediaSession 볼륨 경로)이 들어오면 HUD를 표시한다. 앱 안에서는 미니 재생바 위에 배치하고 플레이어·가사·오른쪽 플레이어 패널에서는 숨긴다. 마지막 조작 후 3초에 사라지며 추가 조작 시 대기 시간을 초기화한다. 180ms 등장/220ms 퇴장과 시스템 애니메이션 설정을 반영한다. 라우트 해제·앱 재진입·서비스 종료에는 제거한다.
 

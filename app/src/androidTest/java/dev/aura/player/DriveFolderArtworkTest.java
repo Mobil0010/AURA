@@ -1,25 +1,395 @@
 package dev.aura.player;
 
-import static org.junit.Assert.*;import org.junit.*;import android.content.Context;import android.graphics.*;import android.net.Uri;import androidx.test.platform.app.InstrumentationRegistry;import org.json.*;import java.io.*;import java.net.*;import java.nio.charset.StandardCharsets;import java.util.*;import java.util.concurrent.*;import java.util.concurrent.atomic.*;
+import static org.junit.Assert.*;
+import org.junit.*;
+import android.content.Context;
+import android.graphics.*;
+import android.net.Uri;
+import androidx.test.platform.app.InstrumentationRegistry;
+import org.json.*;
+import java.io.*;
+import java.net.*;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.*;
 
 public class DriveFolderArtworkTest {
-    private final Context c=InstrumentationRegistry.getInstrumentation().getTargetContext();
-    @Before public void reset()throws Exception{DriveAuth.get(c).clear();DriveAuth.get(c).accept("arttest","art@example.invalid","테스트 계정","test-token");DriveLibrary.saveRoots(c,List.of(new DriveLibrary.Folder("root","Album")));}
-    @After public void clear(){DriveAuth.get(c).clear();}
-    @Test public void coverSelectionPrefersKnownNamesAndRejectsOversizedFiles(){var other=image("o","a-photo.png",50);var front=image("f","front.jpg",50);var cover=image("c","Cover.JPG",50);assertEquals(cover,DriveFolderArtwork.choose(List.of(other,front,cover)));assertNull(DriveFolderArtwork.choose(List.of(image("big","cover.jpg",DriveFolderArtwork.MAX_BYTES+1L))));}
-    @Test public void scanReusesFolderImageAndNeverReplacesEmbeddedArt()throws Exception{try(Server server=new Server()){AtomicInteger tags=new AtomicInteger();DriveLibrary library=new DriveLibrary(c,new DriveApi(server.http()),(context,row,generation)->{tags.incrementAndGet();if(row.getString("title").equals("Embedded")){File file=Library.artFile(c,row.getString("uri"));file.getParentFile().mkdirs();try(FileOutputStream out=new FileOutputStream(file)){out.write(picture(Color.BLUE));}row.put("art",true).put("artKind","embedded");}return row.put("enriched",true);});var tracks=library.scan(p->{});assertEquals(3,tracks.size());assertEquals(3,tags.get());assertEquals(1,server.images.get());for(Track track:tracks){Bitmap b=BitmapFactory.decodeFile(Library.artFile(c,track.uri).toString());assertNotNull(b);int color=b.getPixel(0,0);if(track.title.equals("Embedded"))assertTrue(Color.blue(color)>Color.red(color));else assertTrue(Color.red(color)>Color.blue(color));b.recycle();assertTrue(track.item().mediaMetadata.extras.getBoolean("auraTagsReady"));}File index=new File(c.getFilesDir(),"drive-library.json");JSONObject legacy=new JSONObject(new String(java.nio.file.Files.readAllBytes(index.toPath()),StandardCharsets.UTF_8));JSONArray rows=legacy.getJSONArray("tracks");for(int at=0;at<rows.length();at++)if(rows.getJSONObject(at).getString("title").equals("Embedded")){rows.getJSONObject(at).put("art",false).remove("artKind");}java.nio.file.Files.write(index.toPath(),legacy.toString().getBytes(StandardCharsets.UTF_8));library.scan(p->{});Bitmap retained=BitmapFactory.decodeFile(Library.artFile(c,tracks.stream().filter(t->t.title.equals("Embedded")).findFirst().get().uri).toString());assertTrue(Color.blue(retained.getPixel(0,0))>Color.red(retained.getPixel(0,0)));retained.recycle();assertEquals(3,tags.get());assertEquals(1,server.images.get());server.modified="new";library.scan(p->{});assertEquals(2,server.images.get());assertEquals(3,tags.get());DriveAuth.get(c).clear();assertEquals(0,Objects.requireNonNull(new File(c.getFilesDir(),"drive-folder-art").list()).length);}}
-    @Test public void optionalBrokenImageDoesNotLoseMusicMetadata()throws Exception{try(Server server=new Server()){server.broken=true;var result=new DriveLibrary(c,new DriveApi(server.http()),(context,row,generation)->row.put("artist","Read artist").put("enriched",true)).scan(p->{});assertEquals(3,result.size());assertTrue(result.stream().allMatch(t->t.artist.equals("Read artist")));assertEquals(1,server.images.get());}}
-    @Test public void startupRepairsLegacyMissingCoversWithoutRereadingAudio()throws Exception{try(Server server=new Server()){server.broken=true;AtomicInteger tags=new AtomicInteger();var library=new DriveLibrary(c,new DriveApi(server.http()),(context,row,generation)->{tags.incrementAndGet();return row.put("artist","Keep artist").put("enriched",true);});library.scan(p->{});assertEquals(3,tags.get());File index=new File(c.getFilesDir(),"drive-library.json");JSONObject old=new JSONObject(new String(java.nio.file.Files.readAllBytes(index.toPath()),StandardCharsets.UTF_8));old.remove("folderArtVersion");old.put("cursor","base");java.nio.file.Files.write(index.toPath(),old.toString().getBytes(StandardCharsets.UTF_8));server.broken=false;server.bigCover=true;long revision=DriveLibrary.revision;var tracks=library.scan(p->{},true);assertEquals(3,tags.get());assertTrue(DriveLibrary.revision>revision);for(Track t:tracks){assertEquals("Keep artist",t.artist);assertTrue(Library.artFile(c,t.uri).isFile());}}}
-    @Test public void corruptPreferredPictureFallsBackToNextFolderImage()throws Exception{try(Server server=new Server()){server.broken=true;server.fallback=true;var tracks=new DriveLibrary(c,new DriveApi(server.http()),(context,row,generation)->row.put("enriched",true)).scan(p->{});for(Track t:tracks)assertTrue(Library.artFile(c,t.uri).isFile());assertEquals(2,server.images.get());}}
-    @Test public void highQualityFolderCoverAndLegacyUpgradeDoNotRereadMusic()throws Exception{try(Server server=new Server()){server.coverEdge=2048;AtomicInteger tags=new AtomicInteger();var library=new DriveLibrary(c,new DriveApi(server.http()),(context,row,generation)->{tags.incrementAndGet();return row.put("enriched",true);});var tracks=library.scan(p->{});Track track=tracks.get(0);assertEquals(3,tags.get());assertEquals(1,server.images.get());BitmapFactory.Options bounds=new BitmapFactory.Options();bounds.inJustDecodeBounds=true;BitmapFactory.decodeFile(Library.artFile(c,track.uri).toString(),bounds);assertEquals(2048,bounds.outWidth);assertTrue(ArtworkStore.current(c,track.uri));JSONObject index=new JSONObject(new String(java.nio.file.Files.readAllBytes(new File(c.getFilesDir(),"drive-library.json").toPath()),StandardCharsets.UTF_8));JSONObject row=index.getJSONArray("tracks").getJSONObject(0);File source=new File(c.getFilesDir(),"drive-folder-art/"+row.getString("artKey")+"-hq2.jpg");assertTrue(source.delete());File destination=Library.artFile(c,track.uri);try(var out=new FileOutputStream(destination)){out.write(picture(Color.RED));}assertFalse(ArtworkStore.current(c,track.uri));var cover=new DriveApi.Item("cover","cover.png","image/png",picture(Color.RED,2048).length,"old",true);new DriveFolderArtwork(c,server.http(),DriveAuth.get(c).generation()).apply(row,cover);assertEquals(1,server.images.get());DriveLibrary.refreshArtwork(c,track,server.http());assertTrue(ArtworkStore.current(c,track.uri));BitmapFactory.decodeFile(destination.toString(),bounds);assertEquals(2048,bounds.outWidth);assertEquals(2,server.images.get());assertEquals(3,tags.get());}}
-    @Test public void folderRowRepairsCoverFromManifestWithoutAudioMetadataReads()throws Exception{try(Server server=new Server()){server.broken=true;AtomicInteger tags=new AtomicInteger();var library=new DriveLibrary(c,new DriveApi(server.http()),(context,row,generation)->{tags.incrementAndGet();return row.put("enriched",true);});var tracks=library.scan(p->{});Track first=tracks.get(0);assertFalse(Library.artFile(c,first.uri).isFile());server.broken=false;long revision=DriveLibrary.revision;DriveLibrary.cacheFolderArtwork(c,first,server.http());assertTrue(Library.artFile(c,first.uri).isFile());assertEquals(3,tags.get());assertEquals(revision,DriveLibrary.revision);assertEquals(2,server.images.get());}}
-    private DriveApi.Item image(String id,String name,long size){return new DriveApi.Item(id,name,"image/jpeg",size,"v1",true);}
-    private static byte[] picture(int color){return picture(color,20);}
-    private static byte[] picture(int color,int edge){Bitmap b=Bitmap.createBitmap(edge,edge,Bitmap.Config.ARGB_8888);b.eraseColor(color);ByteArrayOutputStream bytes=new ByteArrayOutputStream();b.compress(Bitmap.CompressFormat.PNG,100,bytes);b.recycle();return bytes.toByteArray();}
-    private static final class Server implements AutoCloseable {final ServerSocket socket=new ServerSocket(0,50,InetAddress.getByName("127.0.0.1"));final ExecutorService tasks=Executors.newCachedThreadPool();final AtomicInteger images=new AtomicInteger();volatile int coverEdge=20;volatile String modified="old";volatile boolean broken,fallback,bigCover;
-        Server()throws Exception{tasks.execute(()->{while(!socket.isClosed())try{Socket client=socket.accept();tasks.execute(()->serve(client));}catch(IOException ignored){}});}
-        DriveHttp http(){return new DriveHttp("http://127.0.0.1:"+socket.getLocalPort()+"/",new DriveHttp.Tokens(){public String token(){return "test-token";}public void invalidate(String token){}});}
-        private void serve(Socket client){try(client){BufferedReader in=new BufferedReader(new InputStreamReader(client.getInputStream(),StandardCharsets.US_ASCII));String first=in.readLine(),line;while((line=in.readLine())!=null&&!line.isEmpty()){}byte[] body;if(first.contains("startPageToken"))body="{\"startPageToken\":\"base\"}".getBytes(StandardCharsets.UTF_8);else if(first.contains("/changes?"))body="{\"changes\":[],\"newStartPageToken\":\"next\"}".getBytes(StandardCharsets.UTF_8);else if(first.contains("alt=media")){images.incrementAndGet();body=broken&&first.contains("/cover?")?new byte[]{1,2,3}:picture(Color.RED,coverEdge);}else{JSONArray files=new JSONArray();for(String name:List.of("First","Second","Embedded"))files.put(new JSONObject().put("id",name).put("name",name+".mp3").put("mimeType","audio/mpeg").put("size",1234).put("modifiedTime","audio-v1"));files.put(new JSONObject().put("id","cover").put("name","cover.png").put("mimeType","image/png").put("size",bigCover?6*1024*1024:picture(Color.RED,coverEdge).length).put("modifiedTime",modified));if(fallback)files.put(new JSONObject().put("id","fallback").put("name","folder.jpg").put("mimeType","image/jpeg").put("size",100).put("modifiedTime",modified));body=new JSONObject().put("files",files).toString().getBytes(StandardCharsets.UTF_8);}OutputStream out=client.getOutputStream();out.write(("HTTP/1.1 200 OK\r\nContent-Length: "+body.length+"\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.US_ASCII));out.write(body);}catch(Exception ignored){}}
-        public void close()throws Exception{socket.close();tasks.shutdownNow();}
+    private final Context c = InstrumentationRegistry.getInstrumentation().getTargetContext();
+
+    @Before
+    public void reset() throws Exception {
+        DriveAuth.get(c).clear();
+        DriveAuth.get(c).accept("arttest", "art@example.invalid", "테스트 계정", "test-token");
+        DriveLibrary.saveRoots(c, List.of(new DriveLibrary.Folder("root", "Album")));
+    }
+
+    @After
+    public void clear() {
+        DriveAuth.get(c).clear();
+    }
+
+    @Test
+    public void coverSelectionPrefersKnownNamesAndRejectsOversizedFiles() {
+        var other = image("o", "a-photo.png", 50);
+        var front = image("f", "front.jpg", 50);
+        var cover = image("c", "Cover.JPG", 50);
+        assertEquals(cover, DriveFolderArtwork.choose(List.of(other, front, cover)));
+        assertNull(
+                DriveFolderArtwork.choose(
+                        List.of(image("big", "cover.jpg", DriveFolderArtwork.MAX_BYTES + 1L))));
+    }
+
+    @Test
+    public void scanReusesFolderImageAndNeverReplacesEmbeddedArt() throws Exception {
+        try (Server server = new Server()) {
+            AtomicInteger tags = new AtomicInteger();
+            DriveLibrary library =
+                    new DriveLibrary(
+                            c,
+                            new DriveApi(server.http()),
+                            (context, row, generation) -> {
+                                tags.incrementAndGet();
+                                if (row.getString("title").equals("Embedded")) {
+                                    File file = Library.artFile(c, row.getString("uri"));
+                                    file.getParentFile().mkdirs();
+                                    try (FileOutputStream out = new FileOutputStream(file)) {
+                                        out.write(picture(Color.BLUE));
+                                    }
+                                    row.put("art", true).put("artKind", "embedded");
+                                }
+                                return row.put("enriched", true);
+                            });
+            var tracks = library.scan(p -> {});
+            assertEquals(3, tracks.size());
+            assertEquals(3, tags.get());
+            assertEquals(1, server.images.get());
+            for (Track track : tracks) {
+                Bitmap b = BitmapFactory.decodeFile(Library.artFile(c, track.uri).toString());
+                assertNotNull(b);
+                int color = b.getPixel(0, 0);
+                if (track.title.equals("Embedded"))
+                    assertTrue(Color.blue(color) > Color.red(color));
+                else assertTrue(Color.red(color) > Color.blue(color));
+                b.recycle();
+                assertTrue(track.item().mediaMetadata.extras.getBoolean("auraTagsReady"));
+            }
+            File index = new File(c.getFilesDir(), "drive-library.json");
+            JSONObject legacy =
+                    new JSONObject(
+                            new String(
+                                    java.nio.file.Files.readAllBytes(index.toPath()),
+                                    StandardCharsets.UTF_8));
+            JSONArray rows = legacy.getJSONArray("tracks");
+            for (int at = 0; at < rows.length(); at++)
+                if (rows.getJSONObject(at).getString("title").equals("Embedded")) {
+                    rows.getJSONObject(at).put("art", false).remove("artKind");
+                }
+            java.nio.file.Files.write(
+                    index.toPath(), legacy.toString().getBytes(StandardCharsets.UTF_8));
+            library.scan(p -> {});
+            Bitmap retained =
+                    BitmapFactory.decodeFile(
+                            Library.artFile(
+                                            c,
+                                            tracks.stream()
+                                                    .filter(t -> t.title.equals("Embedded"))
+                                                    .findFirst()
+                                                    .get()
+                                                    .uri)
+                                    .toString());
+            assertTrue(Color.blue(retained.getPixel(0, 0)) > Color.red(retained.getPixel(0, 0)));
+            retained.recycle();
+            assertEquals(3, tags.get());
+            assertEquals(1, server.images.get());
+            server.modified = "new";
+            library.scan(p -> {});
+            assertEquals(2, server.images.get());
+            assertEquals(3, tags.get());
+            DriveAuth.get(c).clear();
+            assertEquals(
+                    0,
+                    Objects.requireNonNull(new File(c.getFilesDir(), "drive-folder-art").list())
+                            .length);
+        }
+    }
+
+    @Test
+    public void optionalBrokenImageDoesNotLoseMusicMetadata() throws Exception {
+        try (Server server = new Server()) {
+            server.broken = true;
+            var result =
+                    new DriveLibrary(
+                                    c,
+                                    new DriveApi(server.http()),
+                                    (context, row, generation) ->
+                                            row.put("artist", "Read artist").put("enriched", true))
+                            .scan(p -> {});
+            assertEquals(3, result.size());
+            assertTrue(result.stream().allMatch(t -> t.artist.equals("Read artist")));
+            assertEquals(1, server.images.get());
+        }
+    }
+
+    @Test
+    public void startupRepairsLegacyMissingCoversWithoutRereadingAudio() throws Exception {
+        try (Server server = new Server()) {
+            server.broken = true;
+            AtomicInteger tags = new AtomicInteger();
+            var library =
+                    new DriveLibrary(
+                            c,
+                            new DriveApi(server.http()),
+                            (context, row, generation) -> {
+                                tags.incrementAndGet();
+                                return row.put("artist", "Keep artist").put("enriched", true);
+                            });
+            library.scan(p -> {});
+            assertEquals(3, tags.get());
+            File index = new File(c.getFilesDir(), "drive-library.json");
+            JSONObject old =
+                    new JSONObject(
+                            new String(
+                                    java.nio.file.Files.readAllBytes(index.toPath()),
+                                    StandardCharsets.UTF_8));
+            old.remove("folderArtVersion");
+            old.put("cursor", "base");
+            java.nio.file.Files.write(
+                    index.toPath(), old.toString().getBytes(StandardCharsets.UTF_8));
+            server.broken = false;
+            server.bigCover = true;
+            long revision = DriveLibrary.revision;
+            var tracks = library.scan(p -> {}, true);
+            assertEquals(3, tags.get());
+            assertTrue(DriveLibrary.revision > revision);
+            for (Track t : tracks) {
+                assertEquals("Keep artist", t.artist);
+                assertTrue(Library.artFile(c, t.uri).isFile());
+            }
+        }
+    }
+
+    @Test
+    public void corruptPreferredPictureFallsBackToNextFolderImage() throws Exception {
+        try (Server server = new Server()) {
+            server.broken = true;
+            server.fallback = true;
+            var tracks =
+                    new DriveLibrary(
+                                    c,
+                                    new DriveApi(server.http()),
+                                    (context, row, generation) -> row.put("enriched", true))
+                            .scan(p -> {});
+            for (Track t : tracks) assertTrue(Library.artFile(c, t.uri).isFile());
+            assertEquals(2, server.images.get());
+        }
+    }
+
+    @Test
+    public void highQualityFolderCoverAndLegacyUpgradeDoNotRereadMusic() throws Exception {
+        try (Server server = new Server()) {
+            server.coverEdge = 2048;
+            AtomicInteger tags = new AtomicInteger();
+            var library =
+                    new DriveLibrary(
+                            c,
+                            new DriveApi(server.http()),
+                            (context, row, generation) -> {
+                                tags.incrementAndGet();
+                                return row.put("enriched", true);
+                            });
+            var tracks = library.scan(p -> {});
+            Track track = tracks.get(0);
+            assertEquals(3, tags.get());
+            assertEquals(1, server.images.get());
+            BitmapFactory.Options bounds = new BitmapFactory.Options();
+            bounds.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(Library.artFile(c, track.uri).toString(), bounds);
+            assertEquals(2048, bounds.outWidth);
+            assertTrue(ArtworkStore.current(c, track.uri));
+            JSONObject index =
+                    new JSONObject(
+                            new String(
+                                    java.nio.file.Files.readAllBytes(
+                                            new File(c.getFilesDir(), "drive-library.json")
+                                                    .toPath()),
+                                    StandardCharsets.UTF_8));
+            JSONObject row = index.getJSONArray("tracks").getJSONObject(0);
+            File source =
+                    new File(
+                            c.getFilesDir(),
+                            "drive-folder-art/" + row.getString("artKey") + "-hq2.jpg");
+            assertTrue(source.delete());
+            File destination = Library.artFile(c, track.uri);
+            try (var out = new FileOutputStream(destination)) {
+                out.write(picture(Color.RED));
+            }
+            assertFalse(ArtworkStore.current(c, track.uri));
+            var cover =
+                    new DriveApi.Item(
+                            "cover",
+                            "cover.png",
+                            "image/png",
+                            picture(Color.RED, 2048).length,
+                            "old",
+                            true);
+            new DriveFolderArtwork(c, server.http(), DriveAuth.get(c).generation())
+                    .apply(row, cover);
+            assertEquals(1, server.images.get());
+            DriveLibrary.refreshArtwork(c, track, server.http());
+            assertTrue(ArtworkStore.current(c, track.uri));
+            BitmapFactory.decodeFile(destination.toString(), bounds);
+            assertEquals(2048, bounds.outWidth);
+            assertEquals(2, server.images.get());
+            assertEquals(3, tags.get());
+        }
+    }
+
+    @Test
+    public void folderRowRepairsCoverFromManifestWithoutAudioMetadataReads() throws Exception {
+        try (Server server = new Server()) {
+            server.broken = true;
+            AtomicInteger tags = new AtomicInteger();
+            var library =
+                    new DriveLibrary(
+                            c,
+                            new DriveApi(server.http()),
+                            (context, row, generation) -> {
+                                tags.incrementAndGet();
+                                return row.put("enriched", true);
+                            });
+            var tracks = library.scan(p -> {});
+            Track first = tracks.get(0);
+            assertFalse(Library.artFile(c, first.uri).isFile());
+            server.broken = false;
+            long revision = DriveLibrary.revision;
+            DriveLibrary.cacheFolderArtwork(c, first, server.http());
+            assertTrue(Library.artFile(c, first.uri).isFile());
+            assertEquals(3, tags.get());
+            assertEquals(revision, DriveLibrary.revision);
+            assertEquals(2, server.images.get());
+        }
+    }
+
+    private DriveApi.Item image(String id, String name, long size) {
+        return new DriveApi.Item(id, name, "image/jpeg", size, "v1", true);
+    }
+
+    private static byte[] picture(int color) {
+        return picture(color, 20);
+    }
+
+    private static byte[] picture(int color, int edge) {
+        Bitmap b = Bitmap.createBitmap(edge, edge, Bitmap.Config.ARGB_8888);
+        b.eraseColor(color);
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        b.compress(Bitmap.CompressFormat.PNG, 100, bytes);
+        b.recycle();
+        return bytes.toByteArray();
+    }
+
+    private static final class Server implements AutoCloseable {
+        final ServerSocket socket = new ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"));
+        final ExecutorService tasks = Executors.newCachedThreadPool();
+        final AtomicInteger images = new AtomicInteger();
+        volatile int coverEdge = 20;
+        volatile String modified = "old";
+        volatile boolean broken, fallback, bigCover;
+
+        Server() throws Exception {
+            tasks.execute(
+                    () -> {
+                        while (!socket.isClosed())
+                            try {
+                                Socket client = socket.accept();
+                                tasks.execute(() -> serve(client));
+                            } catch (IOException ignored) {
+                            }
+                    });
+        }
+
+        DriveHttp http() {
+            return new DriveHttp(
+                    "http://127.0.0.1:" + socket.getLocalPort() + "/",
+                    new DriveHttp.Tokens() {
+                        public String token() {
+                            return "test-token";
+                        }
+
+                        public void invalidate(String token) {}
+                    });
+        }
+
+        private void serve(Socket client) {
+            try (client) {
+                BufferedReader in =
+                        new BufferedReader(
+                                new InputStreamReader(
+                                        client.getInputStream(), StandardCharsets.US_ASCII));
+                String first = in.readLine(), line;
+                while ((line = in.readLine()) != null && !line.isEmpty()) {}
+                byte[] body;
+                if (first.contains("startPageToken"))
+                    body = "{\"startPageToken\":\"base\"}".getBytes(StandardCharsets.UTF_8);
+                else if (first.contains("/changes?"))
+                    body =
+                            "{\"changes\":[],\"newStartPageToken\":\"next\"}"
+                                    .getBytes(StandardCharsets.UTF_8);
+                else if (first.contains("alt=media")) {
+                    images.incrementAndGet();
+                    body =
+                            broken && first.contains("/cover?")
+                                    ? new byte[] {1, 2, 3}
+                                    : picture(Color.RED, coverEdge);
+                } else {
+                    JSONArray files = new JSONArray();
+                    for (String name : List.of("First", "Second", "Embedded"))
+                        files.put(
+                                new JSONObject()
+                                        .put("id", name)
+                                        .put("name", name + ".mp3")
+                                        .put("mimeType", "audio/mpeg")
+                                        .put("size", 1234)
+                                        .put("modifiedTime", "audio-v1"));
+                    files.put(
+                            new JSONObject()
+                                    .put("id", "cover")
+                                    .put("name", "cover.png")
+                                    .put("mimeType", "image/png")
+                                    .put(
+                                            "size",
+                                            bigCover
+                                                    ? 6 * 1024 * 1024
+                                                    : picture(Color.RED, coverEdge).length)
+                                    .put("modifiedTime", modified));
+                    if (fallback)
+                        files.put(
+                                new JSONObject()
+                                        .put("id", "fallback")
+                                        .put("name", "folder.jpg")
+                                        .put("mimeType", "image/jpeg")
+                                        .put("size", 100)
+                                        .put("modifiedTime", modified));
+                    body =
+                            new JSONObject()
+                                    .put("files", files)
+                                    .toString()
+                                    .getBytes(StandardCharsets.UTF_8);
+                }
+                OutputStream out = client.getOutputStream();
+                out.write(
+                        ("HTTP/1.1 200 OK\r\nContent-Length: "
+                                        + body.length
+                                        + "\r\nConnection: close\r\n\r\n")
+                                .getBytes(StandardCharsets.US_ASCII));
+                out.write(body);
+            } catch (Exception ignored) {
+            }
+        }
+
+        public void close() throws Exception {
+            socket.close();
+            tasks.shutdownNow();
+        }
     }
 }

@@ -61,7 +61,9 @@
 
 ### 1. 앱 설치
 
-**현재 버전은 0.20.0입니다.** [최신 릴리스](https://github.com/Mobil0010/AURA/releases/latest)에서 **`AURA-<버전>.apk`**를 받아 실행하세요. `source.zip`은 개발용 소스이며 설치 파일이 아닙니다. Android의 마지막 설치 확인은 직접 진행해야 합니다.
+**현재 공개 버전은 0.20.0입니다.** 작업 소스는 문서·안내 코드 정리를 포함한 **0.20.1 개발 후보(미배포)**입니다. [최신 릴리스](https://github.com/Mobil0010/AURA/releases/latest)에서 **`AURA-<버전>.apk`**를 받아 실행하세요. `source.zip`은 개발용 소스이며 설치 파일이 아닙니다. Android의 마지막 설치 확인은 직접 진행해야 합니다.
+
+개발 후보에는 목록의 포맷·Hi-Res 배지와 Drive 앨범아트 영구 보관, FLAC 정보 읽기 최적화도 포함됩니다. 사용자 요청으로 공개 배포를 보류했으며 [개발 기록과 실제 캡처](docs/UI-FORMAT-DRIVE-ARTWORK-WIP.md), [Drive 정보 읽기 개선](docs/DRIVE_METADATA_PERFORMANCE.md)에서 확인할 수 있습니다.
 
 ### 2. 내 음악 연결
 
@@ -248,6 +250,8 @@ cd AURA
 
 ### 개발 빌드
 
+코드 정리 규칙과 포매터 설정은 [코드 스타일](docs/CODE_STYLE.md)을 참고하세요.
+
 필요한 도구:
 
 - JDK 17
@@ -260,6 +264,8 @@ cd AURA
 ```sh
 ./gradlew :app:assembleDebug
 ```
+
+Windows에서 프로젝트 경로에 한글이 포함되어 있다면 `powershell -File .\tools\build-windows.ps1 -Variant Debug`를 사용하세요. 영문 임시 작업 폴더에서 빌드해 CMake 경로 충돌을 피하고 APK를 원래 위치로 복사합니다. 기본 실행(Variant 생략)은 미서명 release APK와 lint 검사도 포함합니다. 자세한 내용은 [Windows 네이티브 빌드 안내](docs/NATIVE_BUILD.md)를 참고하세요.
 
 결과: `app/build/outputs/apk/debug/app-debug.apk`
 
