@@ -3115,6 +3115,7 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
 
     private void outputScreen() {
         heading("출력 기기", "시스템에 연결된 출력 목록");
+        body.addView(text(BluetoothCodecMonitor.description(), 12, muted));
         body.addView(text(PcmSink.status, 12, muted));
         AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
         for (AudioDeviceInfo d :
@@ -3130,7 +3131,7 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
         body.addView(button("샘플레이트 · Bit Depth · 버퍼", () -> go("audio"), false));
         body.addView(
                 text(
-                        "시스템에 연결된 기기 목록입니다. 실제 재생 경로는 재생 중 확인할 수 있습니다.\n블루투스 코덱과 실제 샘플레이트 정보는 제공하지 않습니다.",
+                        "시스템에 연결된 기기 목록입니다. 실제 재생 경로는 재생 중 확인할 수 있습니다.\n블루투스 코덱은 시스템이 제공하는 경우에만 표시합니다.",
                         12,
                         muted));
         if (Build.VERSION.SDK_INT >= 31
@@ -4868,8 +4869,9 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
                                         .setNegativeButton("취소", null)
                                         .show()));
         preferenceSwitch("알림·통화 종료 후 자동으로 재생합니다", "resumeFocus", true, null);
+        preferenceSwitch("새 블루투스·유선 기기로 자동 전환합니다", "autoNewOutput", true, null);
         preferenceSwitch("USB DAC 연결 시 자동으로 선택합니다", "autoUsb", true, null);
-        preferenceSwitch("USB DAC 연결 시 음악을 일시정지합니다", "pauseUsbAttach", true, null);
+        preferenceSwitch("USB DAC 연결 시 음악을 일시정지합니다", "pauseUsbAttach", false, null);
         preferenceSwitch("USB DAC 분리 시 음악을 일시정지합니다", "pauseUsbDetach", true, null);
         body.addView(
                 text(

@@ -528,3 +528,15 @@ Restored preserved signing keys from user-provided archive; both certificates ma
 ## 2026-10-30 published APK emulator playback
 
 Installed the downloaded public 0.20.1 APK on Pixel_Tablet Android 15 x86_64. Same-certificate instrumentation passed repeatedSeekPauseAndTrackChangesRemainStableWithHeapPressure (18.673 seconds): WAV playback position advances, 24 seek/track transitions, pause/resume, background playback and 8 MiB retained heap pressure, with no player error. Initial run failed because Android storage cleanup deleted the cache fixture; moved only the test fixture to filesDir and reran successfully. Public application APK unchanged. This verifies emulator playback state, not physical speaker sound quality or USB hardware. Logs and metrics: .local/release-0201-emulator-playback.log and .local/release-0201-emulator-metrics.json.
+
+## 2026-10-30 output routing development (not published)
+
+Added automatic Bluetooth/wired switching from a phone fallback, conservative Bluetooth reconnection behavior while another external output is selected, stable route identity restoration and USB/wired/Bluetooth/speaker startup fallback. Output removal pauses playback. Non-USB transitions disable USB perfect/DoP. New-output automatic switching is configurable; USB attach pause defaults to false and USB detach always pauses.
+
+Bluetooth codec configuration broadcasts are monitored on a best-effort basis. Restricted or missing system codec information is shown as unavailable; PCM/source encoding is never used to guess the Bluetooth codec. Manual versus automatic Bluetooth connection intent cannot be distinguished reliably by AudioDeviceCallback: external outputs are conservatively preserved. No physical Bluetooth/USB device was connected, so hardware switching, codec broadcasts and audible output are unverified.
+
+Final debug APK and lintDebug passed. Android 15 Pixel_Tablet instrumentation: OK (15 tests), 30.62 seconds: 5 new route policy tests, 9 routing/UI regressions and actual WAV playback with 24 transitions/pause/resume/background playback/8 MiB pressure. Log: .local/output-routing-verification.log. No publication or push was performed for this work.
+
+## 2026-10-30 release 0.20.2/code28
+
+Release build, lintDebug and lintVitalRelease passed. Preserved v2/v3/v3.1 rotation signing and 16KB ZIP alignment verified. Signed release APK installed on Android 15 Pixel_Tablet; 5 output policy checks and actual playback/24 transitions/pause/resume/background/8 MiB pressure passed: OK (6 tests), 19.837 seconds. Log: .local/release-0202-playback.log. Prior final debug routing/UI suite: 15 passed. Physical Bluetooth/USB switching and codec reception remain unverified; restricted codec information displays unavailable.

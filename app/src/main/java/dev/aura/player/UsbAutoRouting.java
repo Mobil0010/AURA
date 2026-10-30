@@ -13,6 +13,7 @@ final class UsbAutoRouting implements AutoCloseable {
     private final Handler main = new Handler(Looper.getMainLooper());
     private final android.content.SharedPreferences prefs;
     private final java.util.Set<Integer> knownUsb = new java.util.HashSet<>();
+    private final java.util.Set<Integer> knownOutputs = new java.util.HashSet<>();
     private boolean usbActive;
     private int routeId, directId = -1;
     private long detachedAt;
@@ -20,6 +21,8 @@ final class UsbAutoRouting implements AutoCloseable {
             new AudioDeviceCallback() {
                 @Override
                 public void onAudioDevicesAdded(AudioDeviceInfo[] devices) {
+                    for (var d : devices)
+                        if (knownOutputs.add(d.getId()) && !OutputRouting.usb(d)) added(d);
                     for (var d : devices)
                         if (OutputRouting.usb(d)) {
                             if (knownUsb.add(d.getId())
@@ -33,6 +36,14 @@ final class UsbAutoRouting implements AutoCloseable {
 
                 @Override
                 public void onAudioDevicesRemoved(AudioDeviceInfo[] devices) {
+                    for (var d : devices) {
+                        knownOutputs.remove(d.getId());
+                        if (!OutputRouting.usb(d) && d.getId() == routeId) {
+                            service.pauseForDisconnect();
+                            routeId = 0;
+                            service.automaticRoute(0, true);
+                        }
+                    }
                     for (var d : devices)
                         if (OutputRouting.usb(d)) {
                             knownUsb.remove(d.getId());
@@ -54,6 +65,7 @@ final class UsbAutoRouting implements AutoCloseable {
                 @Override
                 public void onReceive(Context c, Intent i) {
                     String action = i.getAction();
+                    BluetoothCodecMonitor.receive(i);
                     if (UsbManager.ACTION_USB_DEVICE_DETACHED.equals(action)) {
                         UsbDevice d = i.getParcelableExtra(UsbManager.EXTRA_DEVICE);
                         if (d != null
@@ -92,13 +104,17 @@ final class UsbAutoRouting implements AutoCloseable {
         usbActive = AudioSettings.current.mode().equals("usb");
         routeId = AudioSettings.current.deviceId();
         directId = UsbRoute.selectedId();
-        for (var d : audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS))
+        for (var d : audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+            knownOutputs.add(d.getId());
             if (OutputRouting.usb(d)) knownUsb.add(d.getId());
+        }
         audio.registerAudioDeviceCallback(callback, main);
         IntentFilter filter = new IntentFilter();
         filter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED);
         filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
         filter.addAction(AudioManager.ACTION_AUDIO_BECOMING_NOISY);
+        filter.addAction("android.bluetooth.a2dp.profile.action.CODEC_CONFIG_CHANGED");
+        filter.addAction("android.bluetooth.a2dp.profile.action.CONNECTION_STATE_CHANGED");
         androidx.core.content.ContextCompat.registerReceiver(
                 s, receiver, filter, androidx.core.content.ContextCompat.RECEIVER_EXPORTED);
         main.postDelayed(
@@ -117,7 +133,7 @@ final class UsbAutoRouting implements AutoCloseable {
                                     || AudioSettings.current.perfect())) {
                         usbActive = true;
                         detach();
-                    } else attach();
+                    } else restore();
                 },
                 350);
     }
@@ -131,13 +147,55 @@ final class UsbAutoRouting implements AutoCloseable {
     void actualSelected(AudioDeviceInfo d) {
         if (!AudioSettings.current.mode().equals("usb")) {
             usbActive = OutputRouting.usb(d);
-            routeId = usbActive ? d.getId() : 0;
+            routeId = d.getId();
         }
     }
 
+    private String identity(AudioDeviceInfo device) {
+        String address = Build.VERSION.SDK_INT >= 28 ? device.getAddress() : "";
+        return device.getType() + ":" + address + ":" + device.getProductName();
+    }
+
+    private void restore() {
+        String saved = prefs.getString("lastOutputIdentity", "");
+        AudioDeviceInfo best = null;
+        int bestRank = -1;
+        for (var device :
+                OutputDevices.music(audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS), routeId)) {
+            if (identity(device).equals(saved)) {
+                best = device;
+                break;
+            }
+            int type = device.getType();
+            int rank =
+                    OutputRouting.usb(device)
+                            ? 4
+                            : type == AudioDeviceInfo.TYPE_WIRED_HEADSET
+                                            || type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES
+                                    ? 3
+                                    : OutputDevices.bluetooth(type)
+                                            ? 2
+                                            : type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER ? 1 : 0;
+            if (rank > bestRank) {
+                bestRank = rank;
+                best = device;
+            }
+        }
+        if (best == null) return;
+        if (OutputRouting.usb(best)) {
+            attach();
+            return;
+        }
+        if (AudioSettings.current.mode().equals("usb")) EngineMemory.detached(service);
+        AudioSettings.put("perfect", false);
+        routeId = best.getId();
+        service.automaticRoute(routeId, false);
+    }
+
     void systemSelected(AudioDeviceInfo device, boolean perfect) {
+        prefs.edit().putString("lastOutputIdentity", identity(device)).apply();
         usbActive = OutputRouting.usb(device);
-        routeId = usbActive ? device.getId() : 0;
+        routeId = device.getId();
         prefs.edit()
                 .putBoolean("preferDirectUsb", false)
                 .putBoolean("preferSystemPerfect", usbActive && perfect)
@@ -148,6 +206,37 @@ final class UsbAutoRouting implements AutoCloseable {
         usbActive = true;
         routeId = 0;
         directId = UsbRoute.selectedId();
+    }
+
+    private void added(AudioDeviceInfo device) {
+        int type = device.getType();
+        boolean wired =
+                type == AudioDeviceInfo.TYPE_WIRED_HEADSET
+                        || type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES;
+        boolean bluetooth =
+                OutputDevices.bluetooth(type) && type != AudioDeviceInfo.TYPE_BLUETOOTH_SCO;
+        if ((!wired && !bluetooth) || !prefs.getBoolean("autoNewOutput", true)) return;
+        AudioDeviceInfo current = null;
+        for (var port : audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS))
+            if (port.getId() == routeId) current = port;
+        if (!RoutePolicy.selectNew(
+                true,
+                wired,
+                bluetooth,
+                AudioSettings.current.mode().equals("usb")
+                        || current != null
+                                && current.getType() != AudioDeviceInfo.TYPE_BUILTIN_SPEAKER))
+            return;
+        if (AudioSettings.current.mode().equals("usb")) {
+            UsbRoute.close();
+            EngineMemory.detached(service);
+        }
+        AudioSettings.put("perfect", false);
+        if (AudioSettings.current.dsd().equals("dop")) AudioSettings.put("dsd", "pcm");
+        usbActive = false;
+        routeId = device.getId();
+        prefs.edit().putString("lastOutputIdentity", identity(device)).apply();
+        service.automaticRoute(routeId, false);
     }
 
     private void attach() {
@@ -199,7 +288,7 @@ final class UsbAutoRouting implements AutoCloseable {
     }
 
     void pauseForAttach() {
-        if (prefs.getBoolean("pauseUsbAttach", true)) service.pauseForDisconnect();
+        if (prefs.getBoolean("pauseUsbAttach", false)) service.pauseForDisconnect();
     }
 
     private void detach() {
@@ -219,7 +308,7 @@ final class UsbAutoRouting implements AutoCloseable {
             }
         EngineMemory.detached(service);
         UsbRoute.close();
-        service.automaticRoute(phone, prefs.getBoolean("pauseUsbDetach", true));
+        service.automaticRoute(phone, true);
     }
 
     @Override

@@ -2,9 +2,13 @@ package dev.aura.player;
 
 import android.media.AudioDeviceInfo;
 import android.os.Build;
+
 import java.util.*;
 
-/** Present music routes, not internal voice/safe-speaker/loopback endpoints. Never merge by name alone. */
+/**
+ * Present music routes, not internal voice/safe-speaker/loopback endpoints. Never merge by name
+ * alone.
+ */
 final class OutputDevices {
     record Port(int id, int type, String name, String address) {}
 
@@ -43,7 +47,7 @@ final class OutputDevices {
         return "type:" + type;
     }
 
-    private static boolean bluetooth(int type) {
+    static boolean bluetooth(int type) {
         return type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
                 || type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
                 || type == AudioDeviceInfo.TYPE_BLE_HEADSET
