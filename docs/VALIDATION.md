@@ -520,3 +520,7 @@ SHA-256: `44eb7c4ce9e05c00378a8bca66de163f68ef826056aafccce57cb5c56d01be46`
 ## 0.5.1 공개 배포 확인
 
 https://github.com/Mobil0010/AURA/releases/tag/v0.5.1 에 APK·update.json·SHA256SUMS·대응 소스 ZIP 4개를 게시했다. 공개 latest JSON이 로컬 정보와 같으며 versionCode 8 / 0.5.1을 제공하는지 확인했다. APK를 다시 내려받아 13,536,226바이트·SHA-256 44eb7c4ce9e05c00378a8bca66de163f68ef826056aafccce57cb5c56d01be46 및 v2 서명을 검증했다. 인증서 SHA-256 d41fcccff7efb833e448e27aaac0b176454ee70772c358b678edb9a7ea5db89a는 이전 버전과 같다. 이 배포 후 확인 기록은 로컬에 추가했으며 공개 소스 ZIP은 게시 직전 기록을 포함한다.
+
+## 2026-10-30 release 0.20.1 verification
+
+Restored preserved signing keys from user-provided archive; both certificates match registered public certificates. Frozen bridge SHA-256 and lineage match. Windows release build, lintDebug and lintVitalRelease passed. Core 11, karaoke timing 8 and remote HTTP 21 checks passed. Signed APK verifies v2/v3/v3.1 and zipalign 16KB check. No Android device was connected; fresh installation and playback tests were not performed. Windows packaging now uses SDK environment paths, UTF-8 metadata and ASCII temporary paths for aapt.

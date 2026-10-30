@@ -29,7 +29,7 @@ if not directory.is_absolute():
 metadata = json.loads(
     (
         directory / ("update-v2.json" if (directory / "update-v2.json").exists() else "update.json")
-    ).read_text()
+    ).read_text(encoding="utf-8")
 )
 version = metadata["versionName"]
 tag = "v" + version
@@ -41,7 +41,7 @@ assets = [
     directory / f"AURA-{version}-source.zip",
 ]
 if (directory / "update-v2.json").exists():
-    legacy = json.loads((directory / "update.json").read_text())
+    legacy = json.loads((directory / "update.json").read_text(encoding="utf-8"))
     bridge_name = "AURA-0.18.1-bridge.apk"
     bridge = directory / bridge_name
     assert legacy["versionCode"] == 23 and legacy["versionName"] == "0.18.1"
