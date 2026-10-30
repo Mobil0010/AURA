@@ -66,6 +66,8 @@ final class UsbAutoRouting implements AutoCloseable {
                 public void onReceive(Context c, Intent i) {
                     String action = i.getAction();
                     BluetoothCodecMonitor.receive(i);
+                    if (action != null && action.startsWith("android.bluetooth."))
+                        BluetoothCodecMonitor.refresh(service);
                     if (UsbManager.ACTION_USB_DEVICE_DETACHED.equals(action)) {
                         UsbDevice d = i.getParcelableExtra(UsbManager.EXTRA_DEVICE);
                         if (d != null
@@ -99,6 +101,7 @@ final class UsbAutoRouting implements AutoCloseable {
 
     UsbAutoRouting(PlaybackService s) {
         service = s;
+        BluetoothCodecMonitor.refresh(s);
         audio = s.getSystemService(AudioManager.class);
         prefs = s.getSharedPreferences("playback", 0);
         usbActive = AudioSettings.current.mode().equals("usb");
@@ -313,6 +316,7 @@ final class UsbAutoRouting implements AutoCloseable {
 
     @Override
     public void close() {
+        BluetoothCodecMonitor.close();
         main.removeCallbacksAndMessages(null);
         audio.unregisterAudioDeviceCallback(callback);
         service.unregisterReceiver(receiver);

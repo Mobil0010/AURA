@@ -2,7 +2,6 @@ package dev.aura.player;
 
 import android.Manifest;
 import android.app.*;
-import androidx.appcompat.app.AlertDialog;
 import android.content.*;
 import android.content.pm.PackageManager;
 import android.graphics.*;
@@ -14,10 +13,14 @@ import android.net.Uri;
 import android.os.*;
 import android.view.*;
 import android.widget.*;
+
+import androidx.appcompat.app.AlertDialog;
 import androidx.media3.common.*;
 import androidx.media3.session.MediaController;
 import androidx.media3.session.SessionToken;
+
 import com.google.common.util.concurrent.ListenableFuture;
+
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -969,7 +972,7 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
 
     private void homeRoute() {
         routeView = text("", 11, mint);
-        Ui.lines(routeView, 2);
+        Ui.lines(routeView, 1);
         routeView.setGravity(Gravity.CENTER);
         routeView.setMinHeight(dp(44));
         Ui.tap(routeView, () -> go("output"));
@@ -2521,7 +2524,7 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
         }
         add(body, actions, 8);
         routeView = text("", 11, mint);
-        Ui.lines(routeView, 2);
+        Ui.lines(routeView, 1);
         routeView.setGravity(Gravity.CENTER);
         routeView.setMinHeight(dp(40));
         routeView.setBackground(Ui.flatSurface(this, 0, 16));
@@ -3039,7 +3042,8 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
                         this::chooseTrackOrder));
         body.addView(
                 text(
-                        "기존 목록에 트랙 번호가 없으면 모든 폴더 다시 검색을 한 번 실행해 주세요. 시작 시 새 음악 확인에서는 기존 음원을 다시 분석하지 않습니다.",
+                        "기존 목록에 트랙 번호가 없으면 모든 폴더 다시 검색을 한 번 실행해 주세요. 시작 시 새 음악 확인에서는 기존 음원을 다시 분석하지"
+                            + " 않습니다.",
                         12,
                         muted));
         body.addView(
@@ -3058,7 +3062,8 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
                         }));
         body.addView(
                 text(
-                        "켜면 새 곡만 추가하고 삭제된 곡을 정리합니다. 기존 곡의 정보와 표지는 다시 분석하지 않습니다. 저장소를 읽지 못하면 기존 목록을 유지합니다. 기존 곡 정보 갱신은 전체 다시 검색을 이용해 주세요.",
+                        "켜면 새 곡만 추가하고 삭제된 곡을 정리합니다. 기존 곡의 정보와 표지는 다시 분석하지 않습니다. 저장소를 읽지 못하면 기존 목록을"
+                            + " 유지합니다. 기존 곡 정보 갱신은 전체 다시 검색을 이용해 주세요.",
                         12,
                         muted));
         body.addView(menu("Google Drive", "계정 연결 · 스트리밍 · 음악 폴더", () -> go("drive")));
@@ -3115,7 +3120,8 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
 
     private void outputScreen() {
         heading("출력 기기", "시스템에 연결된 출력 목록");
-        body.addView(text(BluetoothCodecMonitor.description(), 12, muted));
+        BluetoothCodecMonitor.refresh(this);
+        body.addView(button("블루투스 코덱 조회용 기기 등록", () -> BluetoothCodecMonitor.associate(this), false));
         body.addView(text(PcmSink.status, 12, muted));
         AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
         for (AudioDeviceInfo d :
@@ -3131,7 +3137,8 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
         body.addView(button("샘플레이트 · Bit Depth · 버퍼", () -> go("audio"), false));
         body.addView(
                 text(
-                        "시스템에 연결된 기기 목록입니다. 실제 재생 경로는 재생 중 확인할 수 있습니다.\n블루투스 코덱은 시스템이 제공하는 경우에만 표시합니다.",
+                        "시스템에 연결된 기기 목록입니다. 실제 재생 경로는 재생 중 확인할 수 있습니다.\n"
+                            + "블루투스 코덱은 시스템이 제공하는 경우에만 표시합니다.",
                         12,
                         muted));
         if (Build.VERSION.SDK_INT >= 31
@@ -3248,7 +3255,15 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
         for (AudioDeviceInfo device : am.getDevices(AudioManager.GET_DEVICES_OUTPUTS))
             if (OutputDevices.bluetooth(device.getType())
                     && device.getId() == AudioSettings.current.deviceId()) bluetooth = true;
-        if (bluetooth) Ui.updateText(routeView, routeView.getText() + "\n" + BluetoothCodecMonitor.description());
+        if (bluetooth && (network == null || !network.active())) {
+            String codec = BluetoothCodecMonitor.name();
+            if (!codec.isEmpty()) {
+                String route = routeView.getText().toString();
+                int arrow = route.lastIndexOf('›');
+                if (arrow >= 0) route = route.substring(0, arrow).stripTrailing();
+                Ui.updateText(routeView, route + " · " + codec + " ›");
+            }
+        }
     }
 
     private final BroadcastReceiver usbPermission =
@@ -3542,7 +3557,8 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
         if (link == null) {
             body.addView(
                     text(
-                            "태블릿이나 PC의 브라우저에서 이 폰의 재생·일시정지·이전/다음 곡을 제어할 수 있습니다.\n\n신뢰하는 Wi-Fi에서만 켜 주세요. 이 버전은 로컬 HTTP 연결이고 링크를 가진 기기가 제어할 수 있습니다.",
+                            "태블릿이나 PC의 브라우저에서 이 폰의 재생·일시정지·이전/다음 곡을 제어할 수 있습니다.\n\n"
+                                + "신뢰하는 Wi-Fi에서만 켜 주세요. 이 버전은 로컬 HTTP 연결이고 링크를 가진 기기가 제어할 수 있습니다.",
                             14,
                             muted));
             body.addView(
@@ -3581,7 +3597,8 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
                             false));
             body.addView(
                     text(
-                            "끄면 기존 링크는 더 이상 사용할 수 없습니다. 다시 켜면 새 인증 링크가 생성됩니다.\n\n절전 모드·백그라운드 제한에 따라 연결이 끊길 수 있습니다.",
+                            "끄면 기존 링크는 더 이상 사용할 수 없습니다. 다시 켜면 새 인증 링크가 생성됩니다.\n\n"
+                                + "절전 모드·백그라운드 제한에 따라 연결이 끊길 수 있습니다.",
                             12,
                             muted));
         }
@@ -3866,7 +3883,9 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
                                         new androidx.appcompat.app.AlertDialog.Builder(this)
                                                 .setTitle("단어 강조")
                                                 .setMessage(
-                                                        "단어별 시간이 있으면 해당 타이밍을 사용합니다. 줄 시간만 있는 가사는 줄 구간을 나눠 추정하며 실제 발음과 다를 수 있습니다. 단어 강조는 이 화면에서 끌 수 있습니다.")
+                                                        "단어별 시간이 있으면 해당 타이밍을 사용합니다. 줄 시간만 있는 가사는 줄"
+                                                            + " 구간을 나눠 추정하며 실제 발음과 다를 수 있습니다. 단어"
+                                                            + " 강조는 이 화면에서 끌 수 있습니다.")
                                                 .setPositiveButton("확인", null)
                                                 .show();
                             }
@@ -4713,6 +4732,7 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
     @Override
     protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
+        if (request == 734) { BluetoothCodecMonitor.refresh(this); render(); return; }
         if (featureUi.result(request, result, data)) return;
         if (driveUi.result(request, result, data)) return;
         if (request == 10 && result == RESULT_OK && data != null && data.getData() != null) {
@@ -4880,7 +4900,9 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
         preferenceSwitch("USB DAC 분리 시 음악을 일시정지합니다", "pauseUsbDetach", true, null);
         body.addView(
                 text(
-                        "통화나 다른 앱이 오디오를 독점하면 일시정지합니다. 비트퍼펙트·USB 직접 출력은 원본 보존을 위해 볼륨 감소 대신 일시정지합니다. 출력 엔진과 비트퍼펙트·DSD 설정은 연결·분리 후에도 유지됩니다. Android/Hi-Res 엔진은 출력 기기만 전환하며, USB 직접 출력은 DAC가 없으면 연결을 기다립니다. 연결·분리 시 일시정지는 각각 끌 수 있습니다.",
+                        "통화나 다른 앱이 오디오를 독점하면 일시정지합니다. 비트퍼펙트·USB 직접 출력은 원본 보존을 위해 볼륨 감소 대신 일시정지합니다."
+                            + " 출력 엔진과 비트퍼펙트·DSD 설정은 연결·분리 후에도 유지됩니다. Android/Hi-Res 엔진은 출력 기기만"
+                            + " 전환하며, USB 직접 출력은 DAC가 없으면 연결을 기다립니다. 연결·분리 시 일시정지는 각각 끌 수 있습니다.",
                         12,
                         muted));
     }

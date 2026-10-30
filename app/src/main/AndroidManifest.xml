@@ -16,6 +16,7 @@
         android:name="android.hardware.usb.host"
         android:required="false"
     />
+    <uses-feature android:name="android.software.companion_device_setup" android:required="false" />
     <application
         android:name=".AuraApplication"
         android:label="AURA"

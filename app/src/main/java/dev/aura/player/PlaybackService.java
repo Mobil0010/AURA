@@ -2,6 +2,7 @@ package dev.aura.player;
 
 import android.app.PendingIntent;
 import android.content.Intent;
+
 import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.C;
 import androidx.media3.common.Player;
@@ -253,6 +254,7 @@ public final class PlaybackService extends MediaSessionService {
     }
 
     public void actualOutput(android.media.AudioDeviceInfo device) {
+        if (OutputDevices.bluetooth(device.getType())) BluetoothCodecMonitor.refresh(this);
         if (routing != null) routing.actualSelected(device);
         if (DeviceProfiles.apply(this, device, false))
             new android.os.Handler(android.os.Looper.getMainLooper())
