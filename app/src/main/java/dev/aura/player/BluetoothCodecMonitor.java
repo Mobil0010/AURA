@@ -8,6 +8,7 @@ final class BluetoothCodecMonitor {
     private static android.bluetooth.BluetoothA2dp profile;
     private static android.bluetooth.BluetoothAdapter adapter;
     private static boolean requested;
+    private static volatile String registrationNeeded;
 
     static synchronized void refresh(android.content.Context context) {
         if (android.os.Build.VERSION.SDK_INT >= 31
@@ -25,6 +26,7 @@ final class BluetoothCodecMonitor {
                                             android.bluetooth.BluetoothDevice.class)
                                     .invoke(profile, devices.get(0));
                     readStatus(status);
+                    registrationNeeded = null;
                 }
                 return;
             }
@@ -54,9 +56,20 @@ final class BluetoothCodecMonitor {
                             android.bluetooth.BluetoothProfile.A2DP);
         } catch (ReflectiveOperationException | RuntimeException error) {
             codec = null;
+            Throwable cause = error.getCause() == null ? error : error.getCause();
+            if (cause instanceof SecurityException
+                    && cause.getMessage() != null
+                    && cause.getMessage().contains("CDM association")) {
+                try {
+                    var devices = profile.getConnectedDevices();
+                    if (devices.size() == 1) registrationNeeded = devices.get(0).getAddress();
+                } catch (RuntimeException ignored) {
+                }
+            }
             android.util.Log.d(
                     "AuraBluetoothCodec",
-                    "Current codec query unavailable: " + (error.getCause() == null ? error : error.getCause()).toString());
+                    "Current codec query unavailable: "
+                            + (error.getCause() == null ? error : error.getCause()).toString());
         }
     }
 
@@ -75,11 +88,15 @@ final class BluetoothCodecMonitor {
         if (config == null) return;
         try {
             Object name = config.getClass().getMethod("getCodecName").invoke(config);
-            if (name instanceof String value && !value.isBlank()) { codec = value; return; }
+            if (name instanceof String value && !value.isBlank()) {
+                codec = value;
+                return;
+            }
         } catch (NoSuchMethodException ignored) {
             // Newer stacks expose the name in the returned configuration instead.
         }
-        var match = java.util.regex.Pattern.compile("codecName[:=]([^,}]+)").matcher(config.toString());
+        var match =
+                java.util.regex.Pattern.compile("codecName[:=]([^,}]+)").matcher(config.toString());
         if (match.find()) codec = match.group(1).trim();
     }
 
@@ -87,6 +104,7 @@ final class BluetoothCodecMonitor {
         if ("android.bluetooth.a2dp.profile.action.CONNECTION_STATE_CHANGED"
                 .equals(intent.getAction())) {
             codec = null;
+            registrationNeeded = null;
             return;
         }
         if (!"android.bluetooth.a2dp.profile.action.CODEC_CONFIG_CHANGED"
@@ -101,35 +119,88 @@ final class BluetoothCodecMonitor {
         }
     }
 
+    static void automaticallyAssociate(android.app.Activity activity) {
+        String address = registrationNeeded;
+        if (address == null
+                || !activity.hasWindowFocus()
+                || activity.isFinishing()
+                || activity.isDestroyed()) return;
+        var prefs = activity.getSharedPreferences("bluetooth-codec", 0);
+        var attempted =
+                new java.util.HashSet<>(
+                        prefs.getStringSet("registrationPrompted", java.util.Set.of()));
+        if (!attempted.add(address)) return;
+        // One automatic system consent request per device; cancellation never creates a prompt
+        // loop.
+        prefs.edit().putStringSet("registrationPrompted", attempted).apply();
+        associate(activity);
+    }
+
     static void associate(android.app.Activity activity) {
-        if (android.os.Build.VERSION.SDK_INT >= 31 && activity.checkSelfPermission(
-                android.Manifest.permission.BLUETOOTH_CONNECT) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            activity.requestPermissions(new String[] {android.Manifest.permission.BLUETOOTH_CONNECT}, 12);
+        if (android.os.Build.VERSION.SDK_INT >= 31
+                && activity.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+                        != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            activity.requestPermissions(
+                    new String[] {android.Manifest.permission.BLUETOOTH_CONNECT}, 12);
             return;
         }
         try {
             if (profile == null || profile.getConnectedDevices().size() != 1) {
-                android.widget.Toast.makeText(activity, "블루투스 오디오 기기 한 대를 연결한 뒤 다시 시도해 주세요.", android.widget.Toast.LENGTH_LONG).show();
+                android.widget.Toast.makeText(
+                                activity,
+                                "블루투스 오디오 기기 한 대를 연결한 뒤 다시 시도해 주세요.",
+                                android.widget.Toast.LENGTH_LONG)
+                        .show();
                 refresh(activity);
                 return;
             }
             String address = profile.getConnectedDevices().get(0).getAddress();
-            var filter = new android.companion.BluetoothDeviceFilter.Builder().setAddress(address).build();
-            var request = new android.companion.AssociationRequest.Builder().addDeviceFilter(filter).setSingleDevice(true).build();
-            activity.getSystemService(android.companion.CompanionDeviceManager.class).associate(request,
-                    new android.companion.CompanionDeviceManager.Callback() {
-                        @Override public void onDeviceFound(android.content.IntentSender chooser) {
-                            try { activity.startIntentSenderForResult(chooser, 734, null, 0, 0, 0); }
-                            catch (android.content.IntentSender.SendIntentException error) {
-                                android.widget.Toast.makeText(activity, "기기 등록 화면을 열 수 없습니다.", android.widget.Toast.LENGTH_LONG).show();
-                            }
-                        }
-                        @Override public void onFailure(CharSequence error) {
-                            android.widget.Toast.makeText(activity, "기기 등록을 완료하지 못했습니다. 다시 시도해 주세요.", android.widget.Toast.LENGTH_LONG).show();
-                        }
-                    }, new android.os.Handler(android.os.Looper.getMainLooper()));
+            var filter =
+                    new android.companion.BluetoothDeviceFilter.Builder()
+                            .setAddress(address)
+                            .build();
+            var request =
+                    new android.companion.AssociationRequest.Builder()
+                            .addDeviceFilter(filter)
+                            .setSingleDevice(true)
+                            .build();
+            activity.getSystemService(android.companion.CompanionDeviceManager.class)
+                    .associate(
+                            request,
+                            new android.companion.CompanionDeviceManager.Callback() {
+                                @Override
+                                public void onDeviceFound(android.content.IntentSender chooser) {
+                                    try {
+                                        if (!activity.isFinishing() && !activity.isDestroyed())
+                                            activity.startIntentSenderForResult(
+                                                    chooser, 734, null, 0, 0, 0);
+                                    } catch (
+                                            android.content.IntentSender.SendIntentException
+                                                    error) {
+                                        android.widget.Toast.makeText(
+                                                        activity,
+                                                        "기기 등록 화면을 열 수 없습니다.",
+                                                        android.widget.Toast.LENGTH_LONG)
+                                                .show();
+                                    }
+                                }
+
+                                @Override
+                                public void onFailure(CharSequence error) {
+                                    android.widget.Toast.makeText(
+                                                    activity,
+                                                    "기기 등록을 완료하지 못했습니다. 다시 시도해 주세요.",
+                                                    android.widget.Toast.LENGTH_LONG)
+                                            .show();
+                                }
+                            },
+                            new android.os.Handler(android.os.Looper.getMainLooper()));
         } catch (RuntimeException error) {
-            android.widget.Toast.makeText(activity, "이 기기에서는 코덱 조회용 등록을 사용할 수 없습니다.", android.widget.Toast.LENGTH_LONG).show();
+            android.widget.Toast.makeText(
+                            activity,
+                            "이 기기에서는 코덱 조회용 등록을 사용할 수 없습니다.",
+                            android.widget.Toast.LENGTH_LONG)
+                    .show();
         }
     }
 

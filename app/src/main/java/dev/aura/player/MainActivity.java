@@ -2207,6 +2207,9 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
     @Override
     protected void onResume() {
         super.onResume();
+        BluetoothCodecMonitor.refresh(this);
+        new Handler(Looper.getMainLooper())
+                .postDelayed(() -> BluetoothCodecMonitor.automaticallyAssociate(this), 1000);
         UsbVolumePopup.resume(this);
         updates.resume();
     }
@@ -3043,7 +3046,7 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
         body.addView(
                 text(
                         "기존 목록에 트랙 번호가 없으면 모든 폴더 다시 검색을 한 번 실행해 주세요. 시작 시 새 음악 확인에서는 기존 음원을 다시 분석하지"
-                            + " 않습니다.",
+                                + " 않습니다.",
                         12,
                         muted));
         body.addView(
@@ -3063,7 +3066,7 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
         body.addView(
                 text(
                         "켜면 새 곡만 추가하고 삭제된 곡을 정리합니다. 기존 곡의 정보와 표지는 다시 분석하지 않습니다. 저장소를 읽지 못하면 기존 목록을"
-                            + " 유지합니다. 기존 곡 정보 갱신은 전체 다시 검색을 이용해 주세요.",
+                                + " 유지합니다. 기존 곡 정보 갱신은 전체 다시 검색을 이용해 주세요.",
                         12,
                         muted));
         body.addView(menu("Google Drive", "계정 연결 · 스트리밍 · 음악 폴더", () -> go("drive")));
@@ -3121,7 +3124,8 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
     private void outputScreen() {
         heading("출력 기기", "시스템에 연결된 출력 목록");
         BluetoothCodecMonitor.refresh(this);
-        body.addView(button("블루투스 코덱 조회용 기기 등록", () -> BluetoothCodecMonitor.associate(this), false));
+        body.addView(
+                button("블루투스 코덱 조회용 기기 등록", () -> BluetoothCodecMonitor.associate(this), false));
         body.addView(text(PcmSink.status, 12, muted));
         AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
         for (AudioDeviceInfo d :
@@ -3138,7 +3142,7 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
         body.addView(
                 text(
                         "시스템에 연결된 기기 목록입니다. 실제 재생 경로는 재생 중 확인할 수 있습니다.\n"
-                            + "블루투스 코덱은 시스템이 제공하는 경우에만 표시합니다.",
+                                + "블루투스 코덱은 시스템이 제공하는 경우에만 표시합니다.",
                         12,
                         muted));
         if (Build.VERSION.SDK_INT >= 31
@@ -3221,6 +3225,7 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
     }
 
     private void updateRoute() {
+        BluetoothCodecMonitor.automaticallyAssociate(this);
         if (routeView == null) return;
         AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
         List<String> names = new ArrayList<>();
@@ -3598,7 +3603,7 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
             body.addView(
                     text(
                             "끄면 기존 링크는 더 이상 사용할 수 없습니다. 다시 켜면 새 인증 링크가 생성됩니다.\n\n"
-                                + "절전 모드·백그라운드 제한에 따라 연결이 끊길 수 있습니다.",
+                                    + "절전 모드·백그라운드 제한에 따라 연결이 끊길 수 있습니다.",
                             12,
                             muted));
         }
@@ -4732,7 +4737,11 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
     @Override
     protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
-        if (request == 734) { BluetoothCodecMonitor.refresh(this); render(); return; }
+        if (request == 734) {
+            BluetoothCodecMonitor.refresh(this);
+            render();
+            return;
+        }
         if (featureUi.result(request, result, data)) return;
         if (driveUi.result(request, result, data)) return;
         if (request == 10 && result == RESULT_OK && data != null && data.getData() != null) {
