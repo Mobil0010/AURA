@@ -259,7 +259,7 @@ public class PlaybackStabilityTest {
 
     @Test
     public void repeatedSeekPauseAndTrackChangesRemainStableWithHeapPressure() throws Exception {
-        File tone = new File(c.getCacheDir(), "stable-tone.wav");
+        File tone = new File(c.getFilesDir(), "stable-tone.wav");
         try (InputStream in = instrumentation.getContext().getAssets().open("tone.wav");
                 OutputStream out = new FileOutputStream(tone)) {
             out.write(Io.read(in));

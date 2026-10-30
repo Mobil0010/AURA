@@ -524,3 +524,7 @@ https://github.com/Mobil0010/AURA/releases/tag/v0.5.1 에 APK·update.json·SHA2
 ## 2026-10-30 release 0.20.1 verification
 
 Restored preserved signing keys from user-provided archive; both certificates match registered public certificates. Frozen bridge SHA-256 and lineage match. Windows release build, lintDebug and lintVitalRelease passed. Core 11, karaoke timing 8 and remote HTTP 21 checks passed. Signed APK verifies v2/v3/v3.1 and zipalign 16KB check. No Android device was connected; fresh installation and playback tests were not performed. Windows packaging now uses SDK environment paths, UTF-8 metadata and ASCII temporary paths for aapt.
+
+## 2026-10-30 published APK emulator playback
+
+Installed the downloaded public 0.20.1 APK on Pixel_Tablet Android 15 x86_64. Same-certificate instrumentation passed repeatedSeekPauseAndTrackChangesRemainStableWithHeapPressure (18.673 seconds): WAV playback position advances, 24 seek/track transitions, pause/resume, background playback and 8 MiB retained heap pressure, with no player error. Initial run failed because Android storage cleanup deleted the cache fixture; moved only the test fixture to filesDir and reran successfully. Public application APK unchanged. This verifies emulator playback state, not physical speaker sound quality or USB hardware. Logs and metrics: .local/release-0201-emulator-playback.log and .local/release-0201-emulator-metrics.json.
