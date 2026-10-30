@@ -969,7 +969,7 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
 
     private void homeRoute() {
         routeView = text("", 11, mint);
-        Ui.lines(routeView, 1);
+        Ui.lines(routeView, 2);
         routeView.setGravity(Gravity.CENTER);
         routeView.setMinHeight(dp(44));
         Ui.tap(routeView, () -> go("output"));
@@ -2521,7 +2521,7 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
         }
         add(body, actions, 8);
         routeView = text("", 11, mint);
-        Ui.lines(routeView, 1);
+        Ui.lines(routeView, 2);
         routeView.setGravity(Gravity.CENTER);
         routeView.setMinHeight(dp(40));
         routeView.setBackground(Ui.flatSurface(this, 0, 16));
@@ -3244,6 +3244,11 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
                                                         ? "비트퍼펙트 출력 연결 대기  ›"
                                                         : "Android 기본 출력  ›")
                                         : "연결됨 · " + String.join(", ", names) + "  ›");
+        boolean bluetooth = OutputDevices.bluetooth(PcmSink.routedType);
+        for (AudioDeviceInfo device : am.getDevices(AudioManager.GET_DEVICES_OUTPUTS))
+            if (OutputDevices.bluetooth(device.getType())
+                    && device.getId() == AudioSettings.current.deviceId()) bluetooth = true;
+        if (bluetooth) Ui.updateText(routeView, routeView.getText() + "\n" + BluetoothCodecMonitor.description());
     }
 
     private final BroadcastReceiver usbPermission =

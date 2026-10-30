@@ -1,17 +1,21 @@
 package dev.aura.player;
 
 import static org.junit.Assert.*;
+
 import android.app.Instrumentation;
 import android.content.*;
 import android.graphics.Rect;
 import android.os.SystemClock;
 import android.view.*;
 import android.widget.*;
+
 import androidx.recyclerview.widget.*;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
+
 import org.junit.*;
 import org.junit.runner.RunWith;
+
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -44,6 +48,25 @@ public class ScrollGestureTest {
                     return null;
                 });
         DriveAuth.get(context).clear();
+    }
+
+    @Test
+    public void settingsRowsAllowVerticalDragsWithoutOpeningRows() throws Exception {
+        main(
+                () -> {
+                    go("settings");
+                    View pane = (View) page().getParent();
+                    var params = (LinearLayout.LayoutParams) pane.getLayoutParams();
+                    params.height = Ui.dp(activity, 320);
+                    params.weight = 0;
+                    pane.setLayoutParams(params);
+                    return null;
+                });
+        idle();
+        assertTrue(main(() -> page().canScrollVertically(1)));
+        drag(page(), true, true);
+        assertEquals("settings", main(() -> get(activity, "page")));
+        assertTrue("Dragging on a settings row must scroll", main(() -> page().getScrollY() > 20));
     }
 
     @Test
@@ -225,7 +248,7 @@ public class ScrollGestureTest {
                     if (holder == null) return false;
                     Rect visible = new Rect();
                     return holder.itemView.getGlobalVisibleRect(visible)
-                            && visible.height() >= holder.itemView.getHeight() - 2;
+                            && visible.height() >= Math.min(holder.itemView.getHeight(), bounds(list).height()) - 2;
                 });
     }
 
@@ -239,7 +262,7 @@ public class ScrollGestureTest {
                     assertTrue(holder.itemView.getGlobalVisibleRect(visible));
                     assertTrue(
                             "Edge item was clipped",
-                            visible.height() >= holder.itemView.getHeight() - 2);
+                            visible.height() >= Math.min(holder.itemView.getHeight(), bounds(list).height()) - 2);
                     return null;
                 });
     }
@@ -253,6 +276,10 @@ public class ScrollGestureTest {
     }
 
     private void drag(View target, boolean down) throws Exception {
+        drag(target, down, false);
+    }
+
+    private void drag(View target, boolean down, boolean hold) throws Exception {
         Rect rect =
                 main(
                         () -> {
@@ -266,6 +293,7 @@ public class ScrollGestureTest {
                 end = down ? rect.top + margin : rect.bottom - margin;
         long at = SystemClock.uptimeMillis();
         input(at, MotionEvent.ACTION_DOWN, x, start);
+        if (hold) SystemClock.sleep(700);
         for (int i = 1; i <= 10; i++) {
             SystemClock.sleep(14);
             input(at, MotionEvent.ACTION_MOVE, x, start + (end - start) * i / 10);

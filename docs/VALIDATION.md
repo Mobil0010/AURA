@@ -540,3 +540,9 @@ Final debug APK and lintDebug passed. Android 15 Pixel_Tablet instrumentation: O
 ## 2026-10-30 release 0.20.2/code28
 
 Release build, lintDebug and lintVitalRelease passed. Preserved v2/v3/v3.1 rotation signing and 16KB ZIP alignment verified. Signed release APK installed on Android 15 Pixel_Tablet; 5 output policy checks and actual playback/24 transitions/pause/resume/background/8 MiB pressure passed: OK (6 tests), 19.837 seconds. Log: .local/release-0202-playback.log. Prior final debug routing/UI suite: 15 passed. Physical Bluetooth/USB switching and codec reception remain unverified; restricted codec information displays unavailable.
+
+## 2026-10-30 release 0.20.3/code29
+
+Common PlayerScrollView now intercepts vertical drags started over clickable rows while preserving nested scrolling lists, SeekBars, EQ graphs and player dismiss handling. Player output text includes Bluetooth codec status for selected Bluetooth or actual AudioTrack Bluetooth routes, using two lines. Restricted codec status remains explicitly unavailable; physical Bluetooth codec reception was not tested.
+
+Debug/release builds, lintDebug and lintVitalRelease passed. Signed release installed on Android 15 emulator. Initial suite: 12/13 passed; the library test incorrectly required an oversized landscape album card to be fully visible. Corrected its viewport-aware visibility condition and reran: library four-tab edge traversal passed (34.676s). All 13 distinct checks passed across runs, including 700ms hold-then-scroll in settings, Drive/group scrolling and player dismiss. Logs: .local/scroll-0203-verification.log and .local/scroll-0203-library-recheck.log. Earlier attempted code27 debug downgrade was rejected and its test run is excluded. APK uses preserved signing lineage and passes 16KB ZIP alignment.

@@ -30,6 +30,7 @@ public class PcmSink implements AudioSink {
                         c.sox());
     }
 
+    public static volatile int routedType;
     public static volatile String status = "출력 대기", routed = "", lastFailure = "";
 
     interface TrackOpener {
@@ -158,6 +159,7 @@ public class PcmSink implements AudioSink {
                 usb = NativeAudio.openUsb(UsbRoute.fd(), rate, channels, bits, c.bufferMs());
                 UsbVolume.ensure(context);
                 status = NativeAudio.usbInfo(usb) + " · 기기 검증 전";
+                routedType = AudioDeviceInfo.TYPE_USB_DEVICE;
                 routed = "USB 직접 출력";
                 publishSignal(c, f);
                 return;
@@ -285,6 +287,7 @@ public class PcmSink implements AudioSink {
                     router -> {
                         if (track != openedTrack) return;
                         AudioDeviceInfo d = openedTrack.getRoutedDevice();
+                        routedType = d == null ? 0 : d.getType();
                         routed = d == null ? "실제 출력 확인 중" : d.getProductName().toString();
                         if (d != null && PlaybackService.instance != null)
                             PlaybackService.instance.actualOutput(d);
@@ -538,6 +541,7 @@ public class PcmSink implements AudioSink {
         eos = drained = false;
         playing = false;
         routed = "";
+        routedType = 0;
     }
 
     @androidx.annotation.RequiresApi(34)

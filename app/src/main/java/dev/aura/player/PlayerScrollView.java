@@ -3,13 +3,17 @@ package dev.aura.player;
 import android.content.Context;
 import android.view.*;
 import android.view.animation.*;
+
 import androidx.core.widget.NestedScrollView;
 
-/** The cover/header can be pulled down to dismiss; sliders and scrolled content keep their gestures. */
+/**
+ * The cover/header can be pulled down to dismiss; sliders and scrolled content keep their gestures.
+ */
 final class PlayerScrollView extends NestedScrollView {
     private Runnable dismiss;
     private boolean eligible, dragging, settling, cancelScroll;
     private float startX, startY, offset;
+    private boolean childOwnsDrag;
     private int regionBottom, epoch;
     private VelocityTracker velocity;
     private java.util.function.Consumer<MotionEvent> interaction;
@@ -66,6 +70,7 @@ final class PlayerScrollView extends NestedScrollView {
         int action = e.getActionMasked();
         if (action == MotionEvent.ACTION_DOWN) {
             if (settling) cancelMotion();
+            childOwnsDrag = ownsDrag(this, e.getRawX(), e.getRawY());
             startX = e.getRawX();
             startY = e.getRawY();
             offset = 0;
@@ -84,7 +89,30 @@ final class PlayerScrollView extends NestedScrollView {
             eligible = false;
             recycle();
         }
+        if (action == MotionEvent.ACTION_MOVE && !childOwnsDrag && !dragging) {
+            float dx = e.getRawX() - startX, dy = e.getRawY() - startY;
+            int slop = ViewConfiguration.get(getContext()).getScaledTouchSlop();
+            if (Math.abs(dy) > slop
+                    && Math.abs(dy) > Math.abs(dx)
+                    && canScrollVertically(dy < 0 ? 1 : -1)) return true;
+        }
         return super.onInterceptTouchEvent(e);
+    }
+
+    private boolean ownsDrag(View view, float x, float y) {
+        if (view.getVisibility() != VISIBLE) return false;
+        android.graphics.Rect bounds = new android.graphics.Rect();
+        if (!view.getGlobalVisibleRect(bounds) || !bounds.contains((int) x, (int) y)) return false;
+        if (view != this
+                && (view instanceof androidx.core.widget.NestedScrollView
+                        || view instanceof android.widget.ScrollView
+                        || view instanceof androidx.recyclerview.widget.RecyclerView
+                        || view instanceof android.widget.SeekBar
+                        || view instanceof EqGraph)) return true;
+        if (view instanceof ViewGroup group)
+            for (int i = group.getChildCount() - 1; i >= 0; i--)
+                if (ownsDrag(group.getChildAt(i), x, y)) return true;
+        return false;
     }
 
     private boolean beginDrag(MotionEvent e) {
